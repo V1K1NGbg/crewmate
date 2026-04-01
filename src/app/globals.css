@@ -1,0 +1,379 @@
+@import "tailwindcss";
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    font-size: 17px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    background: #010409;
+    color: #e6edf3;
+    font-family:
+        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+        Arial, sans-serif;
+    line-height: 1.6;
+}
+
+/* ── Flex overflow fix ──────────────────────────────────────────────────────── */
+/* Prevent flex children from overflowing their parents */
+.flex > * {
+    min-width: 0;
+}
+
+/* ── Scrollbars ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: #21262d;
+    border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #30363d;
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-6px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translate(-50%, 8px);
+        opacity: 0;
+    }
+    to {
+        transform: translate(-50%, 0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideUpLocal {
+    from {
+        transform: translateY(8px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* ── Focus ring ─────────────────────────────────────────────────────────────── */
+:focus-visible {
+    outline: 2px solid #58a6ff30;
+    outline-offset: 2px;
+}
+
+/* ── Resize handle ──────────────────────────────────────────────────────────── */
+.resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    cursor: col-resize;
+    z-index: 60;
+    transition: background 150ms;
+}
+.resize-handle:hover,
+.resize-handle.active {
+    background: #58a6ff40;
+}
+
+/* ── Selection ──────────────────────────────────────────────────────────────── */
+::selection {
+    background: #1f6feb40;
+    color: #e6edf3;
+}
+
+/* ── AI Assistant Markdown ──────────────────────────────────────────────────── */
+.assistant-markdown {
+    line-height: 1.6;
+}
+.assistant-markdown p {
+    margin-bottom: 0.5em;
+}
+.assistant-markdown p:last-child {
+    margin-bottom: 0;
+}
+.assistant-markdown h1,
+.assistant-markdown h2,
+.assistant-markdown h3 {
+    font-weight: 600;
+    margin-top: 0.75em;
+    margin-bottom: 0.35em;
+    color: #f0f6fc;
+}
+.assistant-markdown h1 {
+    font-size: 1.15em;
+}
+.assistant-markdown h2 {
+    font-size: 1.05em;
+}
+.assistant-markdown h3 {
+    font-size: 1em;
+}
+.assistant-markdown ul,
+.assistant-markdown ol {
+    padding-left: 1.4em;
+    margin-bottom: 0.5em;
+}
+.assistant-markdown li {
+    margin-bottom: 0.15em;
+}
+.assistant-markdown li::marker {
+    color: #484f58;
+}
+.assistant-markdown code {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    padding: 0.15em 0.35em;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 0.88em;
+    color: #79c0ff;
+}
+.assistant-markdown pre {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    padding: 0.75em 1em;
+    margin: 0.5em 0;
+    overflow-x: auto;
+}
+.assistant-markdown pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #e6edf3;
+    font-size: 0.85em;
+}
+.assistant-markdown blockquote {
+    border-left: 3px solid #30363d;
+    padding-left: 0.75em;
+    color: #8b949e;
+    margin: 0.5em 0;
+}
+.assistant-markdown a {
+    color: #58a6ff;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.assistant-markdown table {
+    border-collapse: collapse;
+    margin: 0.5em 0;
+    font-size: 0.9em;
+}
+.assistant-markdown th,
+.assistant-markdown td {
+    border: 1px solid #30363d;
+    padding: 0.35em 0.6em;
+}
+.assistant-markdown th {
+    background: #161b22;
+    font-weight: 600;
+}
+.assistant-markdown hr {
+    border: none;
+    border-top: 1px solid #21262d;
+    margin: 0.75em 0;
+}
+
+/* ── Notes Markdown Preview ─────────────────────────────────────────────────── */
+.notes-markdown {
+    line-height: 1.8;
+    color: #e6edf3;
+}
+.notes-markdown h1 {
+    font-size: 1.6em;
+    font-weight: 700;
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+    color: #f0f6fc;
+    border-bottom: 1px solid #21262d;
+    padding-bottom: 0.3em;
+}
+.notes-markdown h2 {
+    font-size: 1.3em;
+    font-weight: 600;
+    margin-top: 0.9em;
+    margin-bottom: 0.4em;
+    color: #f0f6fc;
+    border-bottom: 1px solid #21262d;
+    padding-bottom: 0.25em;
+}
+.notes-markdown h3 {
+    font-size: 1.1em;
+    font-weight: 600;
+    margin-top: 0.75em;
+    margin-bottom: 0.35em;
+    color: #f0f6fc;
+}
+.notes-markdown h4,
+.notes-markdown h5,
+.notes-markdown h6 {
+    font-size: 1em;
+    font-weight: 600;
+    margin-top: 0.6em;
+    margin-bottom: 0.3em;
+    color: #c9d1d9;
+}
+.notes-markdown p {
+    margin-bottom: 0.75em;
+}
+.notes-markdown p:last-child {
+    margin-bottom: 0;
+}
+.notes-markdown ul,
+.notes-markdown ol {
+    padding-left: 1.6em;
+    margin-bottom: 0.75em;
+}
+.notes-markdown li {
+    margin-bottom: 0.25em;
+}
+.notes-markdown li::marker {
+    color: #484f58;
+}
+.notes-markdown li > input[type="checkbox"] {
+    margin-right: 0.5em;
+    accent-color: #58a6ff;
+}
+.notes-markdown code {
+    background: #161b22;
+    border: 1px solid #21262d;
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 0.88em;
+    color: #79c0ff;
+}
+.notes-markdown pre {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 1em 1.25em;
+    margin: 0.75em 0;
+    overflow-x: auto;
+}
+.notes-markdown pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #e6edf3;
+    font-size: 0.88em;
+}
+.notes-markdown blockquote {
+    border-left: 3px solid #58a6ff;
+    padding-left: 1em;
+    color: #8b949e;
+    margin: 0.75em 0;
+    font-style: italic;
+}
+.notes-markdown a {
+    color: #58a6ff;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.notes-markdown table {
+    border-collapse: collapse;
+    margin: 0.75em 0;
+    width: 100%;
+}
+.notes-markdown th,
+.notes-markdown td {
+    border: 1px solid #30363d;
+    padding: 0.5em 0.75em;
+    text-align: left;
+}
+.notes-markdown th {
+    background: #161b22;
+    font-weight: 600;
+    color: #f0f6fc;
+}
+.notes-markdown hr {
+    border: none;
+    border-top: 1px solid #21262d;
+    margin: 1em 0;
+}
+.notes-markdown img {
+    max-width: 100%;
+    border-radius: 8px;
+    margin: 0.5em 0;
+}
+.notes-markdown strong {
+    color: #f0f6fc;
+    font-weight: 600;
+}
+
+/* ── Settings form elements ─────────────────────────────────────────────────── */
+.settings-input {
+    width: 100%;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    color: #e6edf3;
+    outline: none;
+    transition: border-color 150ms;
+}
+.settings-input:focus {
+    border-color: #58a6ff;
+}
+.settings-input::placeholder {
+    color: #484f58;
+}
+.settings-select {
+    width: 100%;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    color: #e6edf3;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 150ms;
+}
+.settings-select:focus {
+    border-color: #58a6ff;
+}
