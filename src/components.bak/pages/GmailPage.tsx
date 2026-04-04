@@ -102,39 +102,39 @@ const ACTION_STYLES: Record<
 > = {
     archive: {
         icon: <Archive size={14} />,
-        color: "#a1a1aa",
-        bg: "rgba(63,63,70,0.15)",
-        border: "#3f3f46",
+        color: "#8b949e",
+        bg: "#21262d",
+        border: "#30363d",
     },
     create_event: {
         icon: <CalendarPlus size={14} />,
-        color: "#818cf8",
-        bg: "rgba(129,140,248,0.08)",
-        border: "rgba(129,140,248,0.3)",
+        color: "#58a6ff",
+        bg: "#1f4a7a22",
+        border: "#1f4a7a",
     },
     create_task: {
         icon: <CheckSquare size={14} />,
-        color: "#4ade80",
-        bg: "rgba(74,222,128,0.08)",
-        border: "rgba(74,222,128,0.3)",
+        color: "#7ee787",
+        bg: "#22863a22",
+        border: "#22863a",
     },
     add_to_notes: {
         icon: <FileText size={14} />,
-        color: "#fbbf24",
-        bg: "rgba(251,191,36,0.08)",
-        border: "rgba(251,191,36,0.3)",
+        color: "#d29922",
+        bg: "#4a300022",
+        border: "#4a3000",
     },
     reply_draft: {
         icon: <Wand2 size={14} />,
-        color: "#c4b5fd",
-        bg: "rgba(196,181,253,0.08)",
-        border: "rgba(196,181,253,0.3)",
+        color: "#d2a8ff",
+        bg: "#3d1f7a22",
+        border: "#3d1f7a",
     },
     mark_important: {
         icon: <Sparkles size={14} />,
-        color: "#fafafa",
-        bg: "rgba(63,63,70,0.15)",
-        border: "#3f3f46",
+        color: "#f0f6fc",
+        bg: "#21262d",
+        border: "#30363d",
     },
 };
 
@@ -146,17 +146,28 @@ const EMAIL_STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
   html { margin: 0; padding: 0; background: #ffffff; }
   body {
-    margin: 0; padding: 0; background: #ffffff; color: #1a1a1a;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    font-size: 15px; line-height: 1.6; overflow-x: hidden; word-break: break-word; overflow-wrap: break-word;
+    margin: 0; padding: 0;
+    background: #ffffff;
+    color: #1a1a1a;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 Helvetica, Arial, sans-serif;
+    font-size: 15px; line-height: 1.6;
+    overflow-x: hidden;
+    word-break: break-word; overflow-wrap: break-word;
   }
-  a { color: #6366f1 !important; }
+  a { color: #1a6fc4 !important; }
   img { max-width: 100%; height: auto; display: block; }
-  p { margin: 0 0 0.85em; } p:last-child { margin-bottom: 0; }
-  blockquote { border-left: 3px solid #d0d7de; margin: 0.5em 0 0.85em; padding: 0.3em 0.8em; color: #57606a; }
+  p  { margin: 0 0 0.85em; }
+  p:last-child { margin-bottom: 0; }
+  blockquote {
+    border-left: 3px solid #d0d7de;
+    margin: 0.5em 0 0.85em; padding: 0.3em 0.8em;
+    color: #57606a;
+  }
   pre, code { font-family: ui-monospace, monospace; font-size: 0.9em; }
   pre { white-space: pre-wrap; word-break: break-word; background: #f6f8fa; padding: 0.75em; border-radius: 4px; }
-  table { border-collapse: collapse; max-width: 100%; } td, th { padding: 6px 10px; }
+  table { border-collapse: collapse; max-width: 100%; }
+  td, th { padding: 6px 10px; }
   hr { border-color: #d0d7de; }
 `;
 
@@ -188,7 +199,7 @@ function EmailBody({ body, snippet }: { body: string; snippet: string }) {
 
     if (!isHtml) {
         return (
-            <pre className="text-sm text-text whitespace-pre-wrap font-sans leading-relaxed">
+            <pre className="text-base text-[#c9d1d9] whitespace-pre-wrap font-sans leading-relaxed">
                 {body || snippet}
             </pre>
         );
@@ -216,31 +227,31 @@ function EmailBody({ body, snippet }: { body: string; snippet: string }) {
 
 function FullPageLoader({ label }: { label: string }) {
     return (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-bg">
-            <Loader2 size={28} className="animate-spin text-accent" />
-            <span className="text-sm text-text-2">{label}</span>
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-[#0d1117]">
+            <Loader2 size={32} className="animate-spin text-[#58a6ff]" />
+            <span className="text-base text-[#8b949e]">{label}</span>
         </div>
     );
 }
 
 function GoogleSignInPrompt({ reason }: { reason: string }) {
     return (
-        <div className="flex-1 flex flex-col items-center justify-center gap-6 p-10 bg-bg">
-            <div className="flex flex-col items-center gap-6 p-8 bg-surface border border-border-2 rounded-2xl shadow-2xl w-96">
-                <div className="w-14 h-14 bg-accent/10 border border-accent/20 rounded-2xl flex items-center justify-center">
-                    <Inbox size={24} className="text-accent" />
+        <div className="flex-1 flex flex-col items-center justify-center gap-6 p-10 bg-[#010409]">
+            <div className="flex flex-col items-center gap-6 p-8 bg-[#0d1117] border border-[#21262d] rounded-2xl shadow-2xl w-96">
+                <div className="w-16 h-16 bg-[#58a6ff]/10 border border-[#58a6ff]/20 rounded-2xl flex items-center justify-center">
+                    <Inbox size={28} className="text-[#58a6ff]" />
                 </div>
                 <div className="flex flex-col items-center gap-2">
-                    <h2 className="text-base font-semibold text-text">
+                    <h2 className="text-lg font-semibold text-[#e6edf3]">
                         Sign in to Gmail
                     </h2>
-                    <p className="text-sm text-text-3 text-center leading-relaxed">
+                    <p className="text-sm text-[#484f58] text-center leading-relaxed">
                         {reason}
                     </p>
                 </div>
                 <button
                     onClick={() => signIn("google", { callbackUrl: "/app" })}
-                    className="w-full flex items-center justify-center gap-3 py-3 bg-surface-2 border border-border-2 text-text text-sm font-semibold rounded-lg hover:border-accent hover:text-accent transition-colors"
+                    className="w-full flex items-center justify-center gap-3 py-3 bg-[#21262d] border border-[#30363d] text-[#e6edf3] text-sm font-semibold rounded-lg hover:border-[#58a6ff] hover:text-[#58a6ff] hover:bg-[#161b22] transition-colors"
                 >
                     <svg width="18" height="18" viewBox="0 0 24 24">
                         <path
@@ -262,7 +273,7 @@ function GoogleSignInPrompt({ reason }: { reason: string }) {
                     </svg>
                     Sign in with Google
                 </button>
-                <p className="text-xs text-text-3 text-center">
+                <p className="text-xs text-[#484f58] text-center">
                     Grants access to Gmail &amp; Google Calendar
                 </p>
             </div>
@@ -286,6 +297,7 @@ export default function GmailPage() {
     const [query, setQuery] = useState("");
     const [searchInput, setSearchInput] = useState("");
 
+    // Compose state
     const [composeOpen, setComposeOpen] = useState(false);
     const [replyTo, setReplyTo] = useState<GmailMessage | null>(null);
     const [composeTo, setComposeTo] = useState("");
@@ -294,6 +306,7 @@ export default function GmailPage() {
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState("");
 
+    // Selection & UI
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [aiActions, setAiActions] = useState<AIAction[]>([]);
     const [aiLoading, setAiLoading] = useState(false);
@@ -330,21 +343,25 @@ export default function GmailPage() {
     const activeThread =
         gmail.threads.find((t) => t.id === activeThreadId) ?? null;
 
+    // Sync threads to global context for AI assistant
     useEffect(() => {
         dispatch({ type: "SET_GMAIL_THREADS", threads: gmail.threads });
     }, [gmail.threads, dispatch]);
 
+    // Load threads
     useEffect(() => {
         const q = query || "in:inbox";
         gmail.fetchThreads(q).catch(() => setAuthError(true));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [query]);
 
+    // Auto-refresh
     useEffect(() => {
         const interval = state.pageSettings.general.autoRefreshInterval;
         if (!interval) return;
         const id = setInterval(() => {
-            gmail.fetchThreads(query || "in:inbox").catch(() => {});
+            const q = query || "in:inbox";
+            gmail.fetchThreads(q).catch(() => {});
         }, interval * 1000);
         return () => clearInterval(id);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -355,9 +372,15 @@ export default function GmailPage() {
         setAiError("");
         setExpandedAction(null);
         setThreadLoading(true);
+
+        // Restore cached suggestions immediately
         const cached = aiCacheRef.current.get(id);
-        if (cached) setAiActions(cached);
-        else setAiActions([]);
+        if (cached) {
+            setAiActions(cached);
+        } else {
+            setAiActions([]);
+        }
+
         try {
             const msgs = await gmail.fetchThread(id);
             if (!msgs) return;
@@ -365,6 +388,7 @@ export default function GmailPage() {
             gmail.setThreads((prev) =>
                 prev.map((x) => (x.id === id ? { ...x, unread: false } : x)),
             );
+            // Only generate if no cached suggestions
             if (!cached && state.opencodeAvailable && msgs.length > 0)
                 generateAIActions(id, msgs);
         } finally {
@@ -592,7 +616,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
         else setSendError("Failed to send");
     }
 
-    /* ── Render ───────────────────────────────────────────────────── */
+    // ── Render ────────────────────────────────────────────────────────────────
 
     if (sessionStatus === "unauthenticated")
         return (
@@ -606,29 +630,29 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
         return <FullPageLoader label="Loading inbox…" />;
 
     return (
-        <div className="flex flex-1 overflow-hidden bg-bg relative">
+        <div className="flex flex-1 overflow-hidden bg-[#0d1117] relative">
             {/* Thread list sidebar */}
             {sidebarVisible && (
                 <aside
-                    className="flex-shrink-0 flex flex-col border-r border-border bg-bg overflow-hidden relative"
+                    className="flex-shrink-0 flex flex-col border-r border-[#21262d] bg-[#0d1117] overflow-hidden relative"
                     style={{ width: threadListResize.width }}
                 >
                     {/* Toolbar */}
-                    <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+                    <div className="flex items-center gap-3 px-6 py-4 border-b border-[#21262d]">
                         <button
                             onClick={() => setSidebarVisible(false)}
-                            className="text-text-2 hover:text-text w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-2 transition-colors flex-shrink-0"
+                            className="text-[#8b949e] hover:text-[#e6edf3] w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#161b22] transition-colors flex-shrink-0"
                             title="Hide sidebar"
                         >
-                            <PanelLeftClose size={16} />
+                            <PanelLeftClose size={18} />
                         </button>
-                        <div className="flex-1 flex items-center gap-2 bg-surface border border-border-2 rounded-lg px-3 py-2 focus-within:border-accent transition-colors">
+                        <div className="flex-1 flex items-center gap-2 bg-[#161b22] border border-[#30363d] rounded-lg px-3.5 py-2.5 focus-within:border-[#58a6ff] transition-colors">
                             <Search
-                                size={14}
-                                className="text-text-3 flex-shrink-0"
+                                size={16}
+                                className="text-[#484f58] flex-shrink-0"
                             />
                             <input
-                                className="flex-1 bg-transparent text-text text-sm outline-none placeholder:text-text-3"
+                                className="flex-1 bg-transparent text-[#e6edf3] text-sm outline-none placeholder:text-[#484f58]"
                                 placeholder="Search mail..."
                                 value={searchInput}
                                 onChange={(e) => setSearchInput(e.target.value)}
@@ -642,26 +666,26 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                             onClick={() =>
                                 gmail.fetchThreads(query || "in:inbox")
                             }
-                            className="w-8 h-8 flex items-center justify-center text-text-2 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
+                            className="w-9 h-9 flex items-center justify-center text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#161b22] rounded-lg transition-colors"
                             title="Refresh"
                         >
                             {gmail.loading ? (
-                                <Loader2 size={14} className="animate-spin" />
+                                <Loader2 size={16} className="animate-spin" />
                             ) : (
-                                <RefreshCw size={14} />
+                                <RefreshCw size={16} />
                             )}
                         </button>
                         <button
                             onClick={openCompose}
-                            className="w-8 h-8 flex items-center justify-center text-text-2 hover:text-accent hover:bg-surface-2 rounded-lg transition-colors"
+                            className="w-9 h-9 flex items-center justify-center text-[#8b949e] hover:text-[#58a6ff] hover:bg-[#161b22] rounded-lg transition-colors"
                             title="Compose"
                         >
-                            <Pencil size={14} />
+                            <Pencil size={16} />
                         </button>
                     </div>
 
                     {/* Filter pills */}
-                    <div className="flex gap-1.5 px-4 py-2.5 border-b border-border">
+                    <div className="flex gap-2.5 px-6 py-3 border-b border-[#21262d]">
                         {["in:inbox", "is:unread", "is:starred", "in:sent"].map(
                             (q) => (
                                 <button
@@ -671,12 +695,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                         setSearchInput("");
                                         setSelected(new Set());
                                     }}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
-                                        query === q ||
-                                        (!query && q === "in:inbox")
-                                            ? "bg-accent/15 text-accent"
-                                            : "text-text-2 hover:text-text hover:bg-surface-2"
-                                    }`}
+                                    className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${query === q || (!query && q === "in:inbox") ? "bg-[#1f4a7a] text-[#58a6ff]" : "text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#161b22]"}`}
                                 >
                                     {q.replace("in:", "").replace("is:", "")}
                                 </button>
@@ -686,27 +705,27 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
 
                     {/* Bulk actions */}
                     {selected.size > 0 && (
-                        <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-surface">
-                            <span className="text-xs text-text-2 flex-1">
+                        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#21262d] bg-[#161b22]">
+                            <span className="text-sm text-[#8b949e] flex-1">
                                 {selected.size} selected
                             </span>
                             <button
                                 onClick={bulkArchive}
-                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-text-2 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
+                                className="flex items-center gap-1.5 px-4 py-2 text-sm text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] rounded-lg transition-colors"
                             >
-                                <Archive size={12} /> Archive
+                                <Archive size={14} /> Archive
                             </button>
                             <button
                                 onClick={bulkTrash}
-                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-text-2 hover:text-danger hover:bg-surface-2 rounded-lg transition-colors"
+                                className="flex items-center gap-1.5 px-4 py-2 text-sm text-[#8b949e] hover:text-[#f85149] hover:bg-[#21262d] rounded-lg transition-colors"
                             >
-                                <Trash2 size={12} /> Trash
+                                <Trash2 size={14} /> Trash
                             </button>
                             <button
                                 onClick={() => setSelected(new Set())}
-                                className="text-text-3 hover:text-text-2 p-1 rounded-lg hover:bg-surface-2 transition-colors"
+                                className="text-[#484f58] hover:text-[#8b949e] p-1.5 rounded-lg hover:bg-[#21262d] transition-colors"
                             >
-                                <X size={12} />
+                                <X size={14} />
                             </button>
                         </div>
                     )}
@@ -714,18 +733,11 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                     {/* Select all */}
                     {gmail.threads.length > 0 && (
                         <div
-                            className="flex items-center gap-3 px-4 py-2 border-b border-border cursor-pointer hover:bg-surface transition-colors"
+                            className="flex items-center gap-3 px-4 py-2.5 border-b border-[#21262d] cursor-pointer hover:bg-[#161b22] transition-colors"
                             onClick={toggleSelectAll}
                         >
                             <div
-                                className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-all ${
-                                    selected.size === gmail.threads.length &&
-                                    gmail.threads.length > 0
-                                        ? "bg-accent border-accent"
-                                        : selected.size > 0
-                                          ? "bg-accent/50 border-accent"
-                                          : "border-text-3"
-                                }`}
+                                className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all ${selected.size === gmail.threads.length && gmail.threads.length > 0 ? "bg-[#58a6ff] border-[#58a6ff]" : selected.size > 0 ? "bg-[#1f4a7a] border-[#58a6ff]" : "border-[#484f58]"}`}
                             >
                                 {(selected.size === gmail.threads.length ||
                                     selected.size > 0) && (
@@ -755,7 +767,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                     </svg>
                                 )}
                             </div>
-                            <span className="text-xs text-text-3">
+                            <span className="text-sm text-[#484f58]">
                                 Select all
                             </span>
                         </div>
@@ -764,8 +776,8 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                     {/* Thread list */}
                     <div className="flex-1 overflow-y-auto">
                         {gmail.threads.length === 0 && !gmail.loading ? (
-                            <div className="flex flex-col items-center justify-center p-12 text-text-3 gap-3">
-                                <Inbox size={36} />
+                            <div className="flex flex-col items-center justify-center p-12 text-[#484f58] gap-3">
+                                <Inbox size={40} />
                                 <span className="text-sm">No messages</span>
                             </div>
                         ) : (
@@ -773,12 +785,12 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                 <div
                                     key={t.id}
                                     onClick={() => openThread(t.id)}
-                                    className={`px-4 py-3 cursor-pointer border-b border-border/50 transition-colors group relative ${
+                                    className={`px-5 py-4 cursor-pointer border-b border-[#161b22] transition-colors group relative ${
                                         activeThreadId === t.id
-                                            ? "bg-accent/10 border-l-2 border-l-accent"
+                                            ? "bg-[#1f4a7a]/25 border-l-2 border-l-[#58a6ff]"
                                             : selected.has(t.id)
-                                              ? "bg-accent/5"
-                                              : "hover:bg-surface"
+                                              ? "bg-[#1f4a7a]/15"
+                                              : "hover:bg-[#161b22]"
                                     }`}
                                 >
                                     <div className="flex items-start gap-3">
@@ -786,11 +798,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                             onClick={(e) =>
                                                 toggleSelect(t.id, e)
                                             }
-                                            className={`mt-0.5 w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                                                selected.has(t.id)
-                                                    ? "bg-accent border-accent"
-                                                    : "border-text-3 opacity-0 group-hover:opacity-100"
-                                            }`}
+                                            className={`mt-0.5 w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center cursor-pointer transition-all ${selected.has(t.id) ? "bg-[#58a6ff] border-[#58a6ff]" : "border-[#484f58] opacity-0 group-hover:opacity-100"}`}
                                         >
                                             {selected.has(t.id) && (
                                                 <svg
@@ -810,49 +818,49 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                             )}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                                            <div className="flex items-baseline justify-between gap-2 mb-1">
                                                 <span
-                                                    className={`text-sm truncate ${t.unread ? "font-semibold text-text" : "font-medium text-text-2"}`}
+                                                    className={`text-sm truncate ${t.unread ? "font-semibold text-[#f0f6fc]" : "font-medium text-[#8b949e]"}`}
                                                 >
                                                     {extractName(t.from)}
                                                 </span>
-                                                <span className="text-xs text-text-3 flex-shrink-0 pr-8">
+                                                <span className="text-xs text-[#484f58] flex-shrink-0 pr-8">
                                                     {formatDate(t.date)}
                                                 </span>
                                             </div>
                                             <div
-                                                className={`text-sm truncate mb-0.5 ${t.unread ? "font-medium text-text" : "text-text-2"}`}
+                                                className={`text-sm truncate mb-1 ${t.unread ? "font-medium text-[#e6edf3]" : "text-[#8b949e]"}`}
                                             >
                                                 {t.subject}
                                             </div>
                                             <div className="flex items-center gap-1.5">
                                                 {t.unread && (
-                                                    <div className="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-[#58a6ff] flex-shrink-0" />
                                                 )}
-                                                <div className="text-xs text-text-3 truncate">
+                                                <div className="text-xs text-[#484f58] truncate">
                                                     {t.snippet}
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="absolute right-2 top-2.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-surface border border-border-2 rounded-lg p-0.5 shadow-sm">
+                                    <div className="absolute right-2 top-3 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-[#161b22] border border-[#30363d] rounded-lg p-0.5 shadow-sm">
                                         <button
                                             onClick={(e) =>
                                                 handleArchive(t.id, e)
                                             }
-                                            className="p-1 text-text-3 hover:text-text-2 hover:bg-surface-2 rounded transition-colors"
+                                            className="p-1.5 text-[#484f58] hover:text-[#8b949e] hover:bg-[#21262d] rounded-lg transition-colors"
                                             title="Archive"
                                         >
-                                            <Archive size={13} />
+                                            <Archive size={14} />
                                         </button>
                                         <button
                                             onClick={(e) =>
                                                 handleTrash(t.id, e)
                                             }
-                                            className="p-1 text-text-3 hover:text-danger hover:bg-surface-2 rounded transition-colors"
+                                            className="p-1.5 text-[#484f58] hover:text-[#f85149] hover:bg-[#21262d] rounded-lg transition-colors"
                                             title="Trash"
                                         >
-                                            <Trash2 size={13} />
+                                            <Trash2 size={14} />
                                         </button>
                                     </div>
                                 </div>
@@ -867,13 +875,13 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                 </aside>
             )}
             {!sidebarVisible && (
-                <div className="w-10 flex-shrink-0 flex flex-col items-center pt-3 border-r border-border bg-bg">
+                <div className="w-10 flex-shrink-0 flex flex-col items-center pt-3 border-r border-[#21262d] bg-[#0d1117]">
                     <button
                         onClick={() => setSidebarVisible(true)}
-                        className="text-text-2 hover:text-text w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-2 transition-colors"
+                        className="text-[#8b949e] hover:text-[#e6edf3] w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#161b22] transition-colors"
                         title="Show sidebar"
                     >
-                        <PanelLeftOpen size={16} />
+                        <PanelLeftOpen size={18} />
                     </button>
                 </div>
             )}
@@ -883,15 +891,15 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                 {threadLoading ? (
                     <FullPageLoader label="Loading conversation…" />
                 ) : !activeThread ? (
-                    <div className="flex-1 flex flex-col items-center justify-center text-text-3 gap-4">
-                        <div className="w-20 h-20 rounded-xl bg-surface border border-border flex items-center justify-center">
-                            <Inbox size={36} />
+                    <div className="flex-1 flex flex-col items-center justify-center text-[#484f58] gap-4">
+                        <div className="w-24 h-24 rounded-lg bg-[#161b22] border border-[#21262d] flex items-center justify-center">
+                            <Inbox size={40} />
                         </div>
                         <div className="text-center">
-                            <p className="text-sm font-medium text-text-2">
+                            <p className="text-base font-medium text-[#8b949e]">
                                 Select a conversation
                             </p>
-                            <p className="text-xs text-text-3 mt-1">
+                            <p className="text-sm text-[#484f58] mt-1">
                                 Choose an email from the sidebar
                             </p>
                         </div>
@@ -900,25 +908,25 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                     <div className="flex flex-1 overflow-hidden min-w-0">
                         <div className="flex flex-col flex-1 overflow-hidden min-w-0">
                             {/* Thread header */}
-                            <div className="flex items-center gap-4 px-6 py-3.5 border-b border-border bg-bg flex-shrink-0">
+                            <div className="flex items-center gap-4 px-6 py-4 border-b border-[#21262d] bg-[#0d1117] flex-shrink-0">
                                 <div className="flex-1 min-w-0">
-                                    <h2 className="text-base font-semibold text-text truncate">
+                                    <h2 className="text-lg font-semibold text-[#f0f6fc] truncate">
                                         {messages[0]?.subject ??
                                             activeThread.subject}
                                     </h2>
-                                    <p className="text-xs text-text-3 mt-0.5">
+                                    <p className="text-sm text-[#484f58] mt-1">
                                         {messages.length} message
                                         {messages.length !== 1 ? "s" : ""}
                                     </p>
                                 </div>
-                                <div className="flex items-center gap-2 flex-shrink-0">
+                                <div className="flex items-center gap-2.5 flex-shrink-0">
                                     <button
                                         onClick={() =>
                                             handleArchive(activeThread.id)
                                         }
-                                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:border-success hover:text-success transition-all"
+                                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#8b949e] border border-[#30363d] rounded-lg hover:border-[#7ee787] hover:text-[#7ee787] hover:bg-[#7ee787]/5 transition-all"
                                     >
-                                        <Archive size={14} /> Archive
+                                        <Archive size={16} /> Archive
                                     </button>
                                     <button
                                         onClick={() =>
@@ -926,24 +934,24 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                                 messages[messages.length - 1],
                                             )
                                         }
-                                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-all"
+                                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-[#58a6ff] text-white rounded-lg hover:bg-[#388bfd] transition-all shadow-sm"
                                     >
-                                        <Reply size={14} /> Reply
+                                        <Reply size={16} /> Reply
                                     </button>
                                 </div>
                             </div>
 
                             {/* Messages */}
                             <div className="flex-1 overflow-y-auto">
-                                <div className="px-6 py-5 flex flex-col gap-5">
+                                <div className="px-6 py-6 flex flex-col gap-6">
                                     {messages.map((msg, idx) => (
                                         <div
                                             key={msg.id}
-                                            className="bg-surface border border-border-2 rounded-xl overflow-hidden"
+                                            className="bg-[#161b22] border border-[#30363d] rounded-lg overflow-hidden"
                                         >
-                                            <div className="flex items-start justify-between gap-4 px-5 py-3.5">
-                                                <div className="flex items-start gap-3 min-w-0">
-                                                    <div className="w-9 h-9 rounded-full bg-surface-2 flex items-center justify-center flex-shrink-0 text-xs font-bold text-text-2">
+                                            <div className="flex items-start justify-between gap-4 px-6 py-4">
+                                                <div className="flex items-start gap-4 min-w-0">
+                                                    <div className="w-11 h-11 rounded-full bg-[#21262d] flex items-center justify-center flex-shrink-0 text-sm font-bold text-[#8b949e]">
                                                         {getInitials(
                                                             extractName(
                                                                 msg.from,
@@ -951,52 +959,52 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                                         )}
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <div className="text-sm font-semibold text-text">
+                                                        <div className="text-sm font-semibold text-[#f0f6fc]">
                                                             {extractName(
                                                                 msg.from,
                                                             )}
                                                         </div>
-                                                        <div className="text-xs text-text-2 mt-0.5">
+                                                        <div className="text-sm text-[#8b949e] mt-1">
                                                             {extractEmail(
                                                                 msg.from,
                                                             )}
                                                         </div>
-                                                        <div className="text-xs text-text-3 mt-0.5">
+                                                        <div className="text-xs text-[#484f58] mt-1">
                                                             To: {msg.to}
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2 flex-shrink-0">
-                                                    <span className="text-xs text-text-3">
+                                                <div className="flex items-center gap-3 flex-shrink-0">
+                                                    <span className="text-sm text-[#484f58]">
                                                         {formatDate(msg.date)}
                                                     </span>
                                                     <button
                                                         onClick={() =>
                                                             openReply(msg)
                                                         }
-                                                        className="text-text-3 hover:text-accent p-1.5 rounded-lg hover:bg-surface-2 transition-colors"
+                                                        className="text-[#484f58] hover:text-[#58a6ff] p-2 rounded-lg hover:bg-[#21262d] transition-colors"
                                                         title="Reply"
                                                     >
-                                                        <Reply size={14} />
+                                                        <Reply size={15} />
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div className="h-px bg-border" />
-                                            <div className="px-6 py-5 overflow-hidden">
+                                            <div className="h-px bg-[#21262d]" />
+                                            <div className="px-7 py-6 overflow-hidden">
                                                 <EmailBody
                                                     body={msg.body}
                                                     snippet={msg.snippet}
                                                 />
                                             </div>
                                             {idx === messages.length - 1 && (
-                                                <div className="px-5 pb-4">
+                                                <div className="px-6 pb-5">
                                                     <button
                                                         onClick={() =>
                                                             openReply(msg)
                                                         }
-                                                        className="flex items-center gap-2 w-full px-4 py-2.5 border border-border-2 rounded-lg text-sm text-text-3 hover:border-accent hover:text-accent transition-all text-left"
+                                                        className="flex items-center gap-2 w-full px-4 py-3 border border-[#30363d] rounded-lg text-sm text-[#484f58] hover:border-[#58a6ff] hover:text-[#58a6ff] hover:bg-[#58a6ff]/5 transition-all text-left"
                                                     >
-                                                        <Reply size={14} />{" "}
+                                                        <Reply size={15} />
                                                         Reply to{" "}
                                                         {extractName(msg.from)}
                                                         ...
@@ -1011,7 +1019,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
 
                         {/* AI actions sidebar */}
                         <aside
-                            className="flex-shrink-0 flex flex-col border-l border-border/50 bg-bg/40 overflow-hidden relative"
+                            className="flex-shrink-0 flex flex-col border-l border-[#21262d]/50 bg-[#0d1117]/40 overflow-hidden relative"
                             style={{ width: aiSidebarResize.width }}
                         >
                             <div
@@ -1019,22 +1027,25 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                 style={{ left: 0 }}
                                 onMouseDown={aiSidebarResize.onMouseDown}
                             />
-                            <div className="flex items-center gap-2 px-4 py-3 border-b border-border/50">
-                                <Sparkles size={13} className="text-accent" />
-                                <span className="text-xs font-semibold text-text-2 uppercase tracking-wide">
+                            <div className="flex items-center gap-2 px-4 py-4 border-b border-[#21262d]/50">
+                                <Sparkles
+                                    size={14}
+                                    className="text-[#58a6ff]"
+                                />
+                                <span className="text-xs font-semibold text-[#8b949e] uppercase tracking-wide">
                                     Suggestions
                                 </span>
                                 {aiLoading && (
                                     <Loader2
-                                        size={11}
-                                        className="animate-spin text-text-3 ml-auto"
+                                        size={12}
+                                        className="animate-spin text-[#484f58] ml-auto"
                                     />
                                 )}
                             </div>
                             {(state.pageSettings.gmail.suggestionModel ||
                                 state.assistantModel) && (
-                                <div className="px-4 py-1.5 border-b border-border/50">
-                                    <span className="text-xs font-mono text-text-3">
+                                <div className="px-4 py-2 border-b border-[#21262d]/50">
+                                    <span className="text-xs font-mono text-[#30363d]">
                                         model:{" "}
                                         {(
                                             state.pageSettings.gmail
@@ -1050,32 +1061,32 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                 {!state.opencodeAvailable ? (
                                     <div className="flex flex-col items-center justify-center gap-3 py-8 px-3 text-center">
                                         <Sparkles
-                                            size={20}
-                                            className="text-text-3"
+                                            size={24}
+                                            className="text-[#484f58]"
                                         />
-                                        <p className="text-xs text-text-3 leading-relaxed">
+                                        <p className="text-sm text-[#484f58] leading-relaxed">
                                             OpenCode not connected.
                                             <br />
                                             Press{" "}
-                                            <kbd className="bg-surface-2 border border-border-2 rounded px-1 text-xs">
+                                            <kbd className="bg-[#21262d] border border-[#30363d] rounded px-1 text-xs">
                                                 O
                                             </kbd>{" "}
                                             to configure.
                                         </p>
                                     </div>
                                 ) : aiLoading ? (
-                                    <div className="flex flex-col items-center justify-center gap-3 py-8 text-text-3">
+                                    <div className="flex flex-col items-center justify-center gap-3 py-8 text-[#484f58]">
                                         <Loader2
-                                            size={20}
+                                            size={22}
                                             className="animate-spin"
                                         />
-                                        <span className="text-xs">
+                                        <span className="text-sm">
                                             Analysing…
                                         </span>
                                     </div>
                                 ) : aiError ? (
                                     <div className="flex flex-col gap-2 py-4 px-1">
-                                        <p className="text-xs text-danger leading-relaxed">
+                                        <p className="text-sm text-[#f85149] leading-relaxed">
                                             {aiError}
                                         </p>
                                         <button
@@ -1087,7 +1098,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                                     messages,
                                                 )
                                             }
-                                            className="text-xs text-accent hover:underline text-left"
+                                            className="text-sm text-[#58a6ff] hover:underline text-left"
                                         >
                                             Retry
                                         </button>
@@ -1095,10 +1106,10 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                 ) : aiActions.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center gap-3 py-8 px-3 text-center">
                                         <Sparkles
-                                            size={20}
-                                            className="text-text-3"
+                                            size={24}
+                                            className="text-[#484f58]"
                                         />
-                                        <p className="text-xs text-text-3">
+                                        <p className="text-sm text-[#484f58]">
                                             No suggestions yet.
                                         </p>
                                         <button
@@ -1110,9 +1121,9 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                                     messages,
                                                 )
                                             }
-                                            className="flex items-center gap-1.5 text-xs text-accent hover:underline"
+                                            className="flex items-center gap-1.5 text-sm text-[#58a6ff] hover:underline"
                                         >
-                                            <Sparkles size={12} /> Analyse
+                                            <Sparkles size={13} /> Analyse
                                         </button>
                                     </div>
                                 ) : (
@@ -1139,7 +1150,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                                                 action,
                                                             )
                                                         }
-                                                        className="flex items-center gap-2 flex-1 px-3 py-2 text-left text-sm font-medium transition-all hover:opacity-90 min-w-0"
+                                                        className="flex items-center gap-2 flex-1 px-3 py-2.5 text-left text-sm font-medium transition-all hover:opacity-90 min-w-0"
                                                         style={{
                                                             color: style.color,
                                                         }}
@@ -1185,7 +1196,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                                 {isExpanded && hasDetails && (
                                                     <div className="px-3 pb-2.5 pt-0 flex flex-col gap-1.5 border-t border-white/5">
                                                         {action.description && (
-                                                            <p className="text-xs text-text-2 leading-relaxed mt-1.5">
+                                                            <p className="text-xs text-[#8b949e] leading-relaxed mt-1.5">
                                                                 {
                                                                     action.description
                                                                 }
@@ -1193,7 +1204,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                                         )}
                                                         {action.payload
                                                             ?.title && (
-                                                            <div className="text-xs text-text-3">
+                                                            <div className="text-xs text-[#484f58]">
                                                                 <span className="font-semibold">
                                                                     Title:
                                                                 </span>{" "}
@@ -1206,7 +1217,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                                         )}
                                                         {action.payload
                                                             ?.dateHint && (
-                                                            <div className="text-xs text-text-3">
+                                                            <div className="text-xs text-[#484f58]">
                                                                 <span className="font-semibold">
                                                                     Date:
                                                                 </span>{" "}
@@ -1219,7 +1230,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                                         )}
                                                         {action.payload
                                                             ?.description && (
-                                                            <div className="text-xs text-text-3">
+                                                            <div className="text-xs text-[#484f58]">
                                                                 <span className="font-semibold">
                                                                     Description:
                                                                 </span>{" "}
@@ -1232,7 +1243,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                                         )}
                                                         {action.payload
                                                             ?.replyDraft && (
-                                                            <div className="text-xs text-text-3">
+                                                            <div className="text-xs text-[#484f58]">
                                                                 <span className="font-semibold">
                                                                     Draft:
                                                                 </span>{" "}
@@ -1264,9 +1275,9 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                                                 messages,
                                             )
                                         }
-                                        className="flex items-center gap-1.5 justify-center w-full mt-1 py-2 text-xs text-text-3 hover:text-text-2 border border-border-2 rounded-lg transition-colors"
+                                        className="flex items-center gap-1.5 justify-center w-full mt-1 py-2 text-sm text-[#484f58] hover:text-[#8b949e] border border-[#30363d] rounded-lg transition-colors"
                                     >
-                                        <RefreshCw size={11} /> Re-analyse
+                                        <RefreshCw size={12} /> Re-analyse
                                     </button>
                                 )}
                             </div>
@@ -1278,57 +1289,59 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
             {/* Compose modal */}
             {composeOpen && (
                 <div
-                    className="absolute bottom-0 right-4 w-[520px] bg-surface border border-border-2 rounded-t-xl shadow-2xl z-50 flex flex-col"
+                    className="absolute bottom-0 right-4 w-[560px] bg-[#161b22] border border-[#30363d] rounded-t-lg shadow-2xl z-50 flex flex-col"
                     style={{
                         maxHeight: "calc(100vh - 60px)",
                         animation: "slideUpLocal 0.2s ease-out both",
                     }}
                 >
-                    <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
-                        <span className="text-sm font-semibold text-text">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-[#30363d]">
+                        <span className="text-base font-semibold text-[#f0f6fc]">
                             {replyTo
                                 ? `Reply to ${extractName(replyTo.from)}`
                                 : "New Message"}
                         </span>
                         <button
                             onClick={() => setComposeOpen(false)}
-                            className="text-text-3 hover:text-text p-1.5 rounded-lg hover:bg-surface-2 transition-colors"
+                            className="text-[#484f58] hover:text-[#e6edf3] p-1.5 rounded-lg hover:bg-[#21262d] transition-colors"
                         >
-                            <X size={14} />
+                            <X size={16} />
                         </button>
                     </div>
                     <div className="flex flex-col flex-1 overflow-hidden p-4 gap-3">
                         <input
-                            className="w-full bg-bg border border-border-2 rounded-lg px-4 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
+                            className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-4 py-3 text-sm text-[#e6edf3] outline-none focus:border-[#58a6ff] placeholder:text-[#484f58] transition-colors"
                             placeholder="To"
                             value={composeTo}
                             onChange={(e) => setComposeTo(e.target.value)}
                         />
                         <input
-                            className="w-full bg-bg border border-border-2 rounded-lg px-4 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
+                            className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-4 py-3 text-sm text-[#e6edf3] outline-none focus:border-[#58a6ff] placeholder:text-[#484f58] transition-colors"
                             placeholder="Subject"
                             value={composeSubject}
                             onChange={(e) => setComposeSubject(e.target.value)}
                         />
                         <textarea
-                            className="flex-1 bg-bg border border-border-2 rounded-lg px-4 py-2.5 text-sm text-text outline-none focus:border-accent resize-none placeholder:text-text-3 transition-colors leading-relaxed"
+                            className="flex-1 bg-[#0d1117] border border-[#30363d] rounded-lg px-4 py-3 text-sm text-[#e6edf3] outline-none focus:border-[#58a6ff] resize-none placeholder:text-[#484f58] transition-colors leading-relaxed"
                             placeholder="Write your message..."
                             value={composeBody}
                             onChange={(e) => setComposeBody(e.target.value)}
                             rows={10}
                         />
                         {sendError && (
-                            <p className="text-sm text-danger">{sendError}</p>
+                            <p className="text-sm text-[#f85149]">
+                                {sendError}
+                            </p>
                         )}
                         <button
                             onClick={handleSend}
                             disabled={sending}
-                            className="flex items-center justify-center gap-2 w-full py-2.5 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-all disabled:opacity-50"
+                            className="flex items-center justify-center gap-2 w-full py-3 bg-[#238636] text-white text-sm font-semibold rounded-lg hover:bg-[#2ea043] transition-all disabled:opacity-50 shadow-md"
                         >
                             {sending ? (
-                                <Loader2 size={14} className="animate-spin" />
+                                <Loader2 size={15} className="animate-spin" />
                             ) : (
-                                <Send size={14} />
+                                <Send size={15} />
                             )}
                             {sending ? "Sending..." : "Send"}
                         </button>

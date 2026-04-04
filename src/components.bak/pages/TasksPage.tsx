@@ -65,6 +65,7 @@ export default function TasksPage() {
                 );
             setListId(initData.taskListId);
             listIdRef.current = initData.taskListId;
+
             const itemsRes = await fetch(
                 `/api/tasks/items?listId=${encodeURIComponent(initData.taskListId)}`,
             );
@@ -73,11 +74,11 @@ export default function TasksPage() {
                 throw new Error(itemsData.error ?? "Failed to load tasks");
             setTasks(itemsData.items ?? []);
         } catch (err: unknown) {
-            setInitError(
+            const msg =
                 err instanceof Error
                     ? err.message
-                    : "Failed to load Google Tasks",
-            );
+                    : "Failed to load Google Tasks";
+            setInitError(msg);
         } finally {
             setLoading(false);
         }
@@ -94,7 +95,7 @@ export default function TasksPage() {
             const data = await res.json();
             setTasks(data.items ?? []);
         } catch {
-            /* silent */
+            // silent refresh failure
         }
     }, []);
 
@@ -102,6 +103,7 @@ export default function TasksPage() {
         if (session?.accessToken) initList();
     }, [session?.accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Consume taskPrefill
     useEffect(() => {
         if (!state.taskPrefill || !listId) return;
         const { title, description, dueDate } = state.taskPrefill;
@@ -109,6 +111,7 @@ export default function TasksPage() {
         handleCreateTask(title || "Untitled", description, dueDate);
     }, [state.taskPrefill]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Auto-refresh
     useEffect(() => {
         const interval = state.pageSettings.general.autoRefreshInterval;
         if (!interval || !listIdRef.current) return;
@@ -220,6 +223,8 @@ export default function TasksPage() {
                 )
                 .filter(Boolean)
                 .slice(0, 5);
+
+            // Create subtasks under the parent task
             for (const line of lines) {
                 const res = await fetch("/api/tasks/items", {
                     method: "POST",
@@ -232,6 +237,7 @@ export default function TasksPage() {
                 });
                 if (!res.ok) throw new Error("Failed to create subtask");
             }
+            // Refresh to get the updated tree from Google
             await refreshTasks();
             setExpandedId(task.id);
             notify("AI breakdown complete — subtasks added", "success");
@@ -259,8 +265,11 @@ export default function TasksPage() {
     }
 
     function filterLabel(f: FilterType) {
-        return f === "all" ? "All" : f === "needsAction" ? "Pending" : "Done";
+        if (f === "all") return "All";
+        if (f === "needsAction") return "Pending";
+        return "Done";
     }
+
     function filterCount(f: FilterType) {
         return f === "all"
             ? tasks.length
@@ -270,6 +279,8 @@ export default function TasksPage() {
     const filtered = tasks.filter(
         (t) => filter === "all" || t.status === filter,
     );
+
+    // Group subtasks under their parent
     const childrenMap = new Map<string, GoogleTask[]>();
     const topLevel: GoogleTask[] = [];
     for (const t of filtered) {
@@ -287,18 +298,18 @@ export default function TasksPage() {
             !session?.accessToken ||
             initError?.toLowerCase().includes("unauthorized");
         return (
-            <div className="flex-1 flex flex-col items-center justify-center gap-6 bg-bg p-12">
-                <div className="flex flex-col items-center gap-5 p-8 bg-surface border border-border-2 rounded-2xl max-w-sm w-full">
-                    <div className="w-12 h-12 bg-surface-2 rounded-xl flex items-center justify-center">
-                        <CheckSquare size={24} className="text-text-3" />
+            <div className="flex-1 flex flex-col items-center justify-center gap-6 bg-[#0d1117] p-12">
+                <div className="flex flex-col items-center gap-5 p-8 bg-[#161b22] border border-[#30363d] rounded-2xl max-w-sm w-full">
+                    <div className="w-14 h-14 bg-[#21262d] rounded-xl flex items-center justify-center">
+                        <CheckSquare size={28} className="text-[#484f58]" />
                     </div>
                     <div className="flex flex-col items-center gap-2 text-center">
-                        <h2 className="text-base font-semibold text-text">
+                        <h2 className="text-lg font-semibold text-[#f0f6fc]">
                             {isUnauthorized
                                 ? "Re-authentication required"
                                 : "Could not load Tasks"}
                         </h2>
-                        <p className="text-sm text-text-2 leading-relaxed">
+                        <p className="text-sm text-[#8b949e] leading-relaxed">
                             {isUnauthorized
                                 ? "Sign out and sign back in to grant access to Google Tasks."
                                 : (initError ??
@@ -308,14 +319,14 @@ export default function TasksPage() {
                     {isUnauthorized ? (
                         <a
                             href="/api/auth/signout"
-                            className="w-full flex items-center justify-center px-4 py-2.5 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-all"
+                            className="w-full flex items-center justify-center px-4 py-2.5 bg-[#58a6ff] text-white text-sm font-semibold rounded-lg hover:bg-[#388bfd] transition-all"
                         >
                             Sign out &amp; re-authenticate
                         </a>
                     ) : (
                         <button
                             onClick={initList}
-                            className="w-full flex items-center justify-center px-4 py-2.5 bg-surface-2 border border-border-2 text-text text-sm font-medium rounded-lg hover:border-accent hover:text-accent transition-all"
+                            className="w-full flex items-center justify-center px-4 py-2.5 bg-[#21262d] border border-[#30363d] text-[#f0f6fc] text-sm font-medium rounded-lg hover:border-[#58a6ff] hover:text-[#58a6ff] transition-all"
                         >
                             Retry
                         </button>
@@ -327,9 +338,12 @@ export default function TasksPage() {
 
     if (loading) {
         return (
-            <div className="flex-1 flex items-center justify-center bg-bg">
-                <div className="flex items-center gap-3 text-text-2 text-sm">
-                    <Loader2 size={16} className="animate-spin text-accent" />{" "}
+            <div className="flex-1 flex items-center justify-center bg-[#0d1117]">
+                <div className="flex items-center gap-3 text-[#8b949e] text-sm">
+                    <Loader2
+                        size={18}
+                        className="animate-spin text-[#58a6ff]"
+                    />
                     Loading Google Tasks…
                 </div>
             </div>
@@ -337,53 +351,54 @@ export default function TasksPage() {
     }
 
     return (
-        <div className="flex flex-col flex-1 overflow-hidden bg-bg">
+        <div className="flex flex-col flex-1 overflow-hidden bg-[#0d1117]">
             {/* Toolbar */}
-            <div className="flex items-center justify-between px-6 py-3 border-b border-border bg-bg flex-shrink-0">
-                <div className="flex gap-1.5">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#21262d] bg-[#0d1117] flex-shrink-0">
+                <div className="flex gap-2.5">
                     {FILTER_OPTIONS.map((f) => (
                         <button
                             key={f}
                             onClick={() => setFilter(f)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
+                            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
                                 filter === f
-                                    ? "text-accent bg-accent/15"
-                                    : "text-text-2 hover:text-text hover:bg-surface"
+                                    ? "text-[#58a6ff] bg-[#1f4a7a] shadow-sm"
+                                    : "text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#161b22]"
                             }`}
                         >
                             {filterLabel(f)}
                             <span
-                                className={`text-xs px-1.5 py-0.5 rounded-full ${filter === f ? "bg-accent/20 text-accent" : "bg-surface-2 text-text-3"}`}
+                                className={`text-xs px-1.5 py-0.5 rounded-full ${filter === f ? "bg-[#58a6ff]/20 text-[#58a6ff]" : "bg-[#21262d] text-[#484f58]"}`}
                             >
                                 {filterCount(f)}
                             </span>
                         </button>
                     ))}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                     {listId && (
                         <a
                             href="https://tasks.google.com"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-text-2 border border-border-2 rounded-lg hover:border-accent hover:text-accent transition-all"
+                            className="flex items-center gap-1.5 px-4 py-2 text-sm text-[#8b949e] border border-[#30363d] rounded-lg hover:border-[#58a6ff] hover:text-[#58a6ff] hover:bg-[#58a6ff]/5 transition-all"
                             title="Open in Google Tasks"
                         >
-                            <ExternalLink size={13} /> Open in Tasks
+                            <ExternalLink size={14} />
+                            Open in Tasks
                         </a>
                     )}
                     <button
                         onClick={refreshTasks}
-                        className="w-8 h-8 flex items-center justify-center text-text-2 hover:text-text hover:bg-surface rounded-lg transition-colors"
+                        className="w-9 h-9 flex items-center justify-center text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#161b22] rounded-lg transition-colors"
                         title="Refresh"
                     >
-                        <RefreshCw size={14} />
+                        <RefreshCw size={16} />
                     </button>
                     <button
                         onClick={() => setShowNewForm(!showNewForm)}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-all"
+                        className="flex items-center gap-2 px-4 py-2 bg-[#58a6ff] text-white text-sm font-semibold rounded-lg hover:bg-[#388bfd] transition-all shadow-md shadow-[#58a6ff]/20"
                     >
-                        <Plus size={14} /> New task
+                        <Plus size={16} /> New task
                     </button>
                 </div>
             </div>
@@ -391,42 +406,42 @@ export default function TasksPage() {
             {/* New task form */}
             {showNewForm && (
                 <div
-                    className="flex flex-col gap-3 px-6 py-3.5 bg-surface border-b border-border"
+                    className="flex flex-col gap-3.5 px-6 py-4 bg-[#161b22] border-b border-[#21262d]"
                     style={{ animation: "slideDown 0.15s ease-out both" }}
                 >
                     <input
                         autoFocus
-                        className="w-full bg-bg border border-border-2 rounded-lg px-4 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
+                        className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-4 py-3.5 text-sm text-[#f0f6fc] outline-none focus:border-[#58a6ff] placeholder:text-[#484f58] transition-colors"
                         placeholder="Task title..."
                         value={newTitle}
                         onChange={(e) => setNewTitle(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && handleNewTask()}
                     />
                     <textarea
-                        className="w-full bg-bg border border-border-2 rounded-lg px-4 py-2.5 text-sm text-text outline-none focus:border-accent resize-none placeholder:text-text-3 transition-colors leading-relaxed"
+                        className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-4 py-3.5 text-sm text-[#f0f6fc] outline-none focus:border-[#58a6ff] resize-none placeholder:text-[#484f58] transition-colors leading-relaxed"
                         placeholder="Notes (optional — helps AI breakdown)..."
                         rows={2}
                         value={newNotes}
                         onChange={(e) => setNewNotes(e.target.value)}
                     />
-                    <div className="flex gap-2 items-center flex-wrap">
+                    <div className="flex gap-2.5 items-center flex-wrap">
                         <input
                             type="date"
-                            className="bg-bg border border-border-2 rounded-lg px-3 py-2 text-sm text-text outline-none cursor-pointer hover:border-accent transition-colors"
+                            className="bg-[#0d1117] border border-[#30363d] rounded-lg px-3.5 py-2.5 text-sm text-[#f0f6fc] outline-none cursor-pointer hover:border-[#58a6ff] transition-colors"
                             value={newDue}
                             onChange={(e) => setNewDue(e.target.value)}
                         />
-                        <div className="flex gap-2 ml-auto">
+                        <div className="flex gap-2.5 ml-auto">
                             <button
                                 onClick={() => setShowNewForm(false)}
-                                className="px-4 py-2 text-sm text-text-2 border border-border-2 rounded-lg hover:text-text hover:bg-surface-2 transition-colors"
+                                className="px-5 py-2.5 text-sm text-[#8b949e] border border-[#30363d] rounded-lg hover:text-[#f0f6fc] hover:bg-[#21262d] transition-colors"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleNewTask}
                                 disabled={!newTitle.trim()}
-                                className="px-4 py-2 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-all disabled:opacity-40"
+                                className="px-5 py-2.5 bg-[#238636] text-white text-sm font-semibold rounded-lg hover:bg-[#2ea043] transition-all disabled:opacity-40"
                             >
                                 Save &amp; add
                             </button>
@@ -436,7 +451,7 @@ export default function TasksPage() {
             )}
 
             {/* Task list */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-2.5">
+            <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-3">
                 {topLevel.map((task) => {
                     const done = task.status === "completed";
                     const isExpanded = expandedId === task.id;
@@ -445,42 +460,47 @@ export default function TasksPage() {
                     return (
                         <div
                             key={task.id}
-                            className={`rounded-xl border transition-all ${
+                            className={`rounded-lg border transition-all ${
                                 done
-                                    ? "border-border bg-surface/50 opacity-60"
-                                    : "border-border-2 bg-surface hover:border-text-3"
+                                    ? "border-[#21262d] bg-[#161b22]/50 opacity-60"
+                                    : "border-[#30363d] bg-[#161b22] hover:border-[#484f58] hover:bg-[#1c2128]"
                             }`}
                         >
-                            <div className="flex items-center gap-3 px-4 py-3.5">
+                            <div className="flex items-center gap-3.5 px-5 py-4">
                                 <button
                                     onClick={() => handleToggleStatus(task)}
-                                    className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-2 transition-colors"
-                                    title={`Status: ${task.status}`}
+                                    className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#21262d] transition-colors"
+                                    title={`Status: ${task.status} — click to toggle`}
                                 >
                                     {done ? (
                                         <CheckSquare
-                                            size={16}
-                                            className="text-success"
+                                            size={18}
+                                            className="text-[#7ee787]"
                                         />
                                     ) : (
                                         <Circle
-                                            size={16}
-                                            className="text-text-3"
+                                            size={18}
+                                            className="text-[#484f58]"
                                         />
                                     )}
                                 </button>
+
                                 <div className="flex-1 min-w-0">
                                     <span
-                                        className={`block text-sm font-medium leading-snug truncate ${done ? "line-through text-text-3" : "text-text"}`}
+                                        className={`block text-sm font-medium leading-snug truncate ${
+                                            done
+                                                ? "line-through text-[#484f58]"
+                                                : "text-[#f0f6fc]"
+                                        }`}
                                     >
                                         {task.title}
                                     </span>
-                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                         {task.due && (
-                                            <span className="flex items-center gap-1 text-xs text-text-2">
+                                            <span className="flex items-center gap-1 text-xs text-[#8b949e]">
                                                 <Clock
-                                                    size={12}
-                                                    className="text-text-3"
+                                                    size={13}
+                                                    className="text-[#484f58]"
                                                 />
                                                 {format(
                                                     new Date(task.due),
@@ -489,7 +509,7 @@ export default function TasksPage() {
                                             </span>
                                         )}
                                         {subtasks.length > 0 && (
-                                            <span className="text-xs text-text-3">
+                                            <span className="text-xs text-[#484f58]">
                                                 {
                                                     subtasks.filter(
                                                         (s) =>
@@ -502,20 +522,21 @@ export default function TasksPage() {
                                         )}
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-1.5 flex-shrink-0">
+
+                                <div className="flex items-center gap-2 flex-shrink-0">
                                     <button
                                         onClick={() =>
                                             handleAddToCalendar(task)
                                         }
-                                        className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-success hover:bg-success/10 rounded-lg transition-colors"
+                                        className="flex items-center justify-center w-9 h-9 text-[#484f58] hover:text-[#7ee787] hover:bg-[#7ee787]/10 rounded-lg transition-colors"
                                         title="Add to calendar"
                                     >
-                                        <CalendarPlus size={14} />
+                                        <CalendarPlus size={15} />
                                     </button>
                                     <button
                                         onClick={() => handleAIExpand(task)}
                                         disabled={isExpanding}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:border-accent hover:text-accent transition-all disabled:opacity-50"
+                                        className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-[#8b949e] border border-[#30363d] rounded-lg hover:border-[#58a6ff] hover:text-[#58a6ff] hover:bg-[#58a6ff]/5 transition-all disabled:opacity-50"
                                     >
                                         {isExpanding ? (
                                             <Loader2
@@ -524,7 +545,7 @@ export default function TasksPage() {
                                             />
                                         ) : (
                                             <Sparkles size={12} />
-                                        )}{" "}
+                                        )}
                                         Break down
                                     </button>
                                     <button
@@ -533,66 +554,72 @@ export default function TasksPage() {
                                                 isExpanded ? null : task.id,
                                             )
                                         }
-                                        className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
+                                        className="flex items-center justify-center w-9 h-9 text-[#484f58] hover:text-[#f0f6fc] hover:bg-[#21262d] rounded-lg transition-colors"
                                         title={
                                             isExpanded
                                                 ? "Collapse"
-                                                : `Expand${subtasks.length > 0 ? ` (${subtasks.length})` : ""}`
+                                                : `Expand${subtasks.length > 0 ? ` (${subtasks.length} subtask${subtasks.length > 1 ? "s" : ""})` : ""}`
                                         }
                                     >
                                         {isExpanded ? (
-                                            <ChevronDown size={14} />
+                                            <ChevronDown size={15} />
                                         ) : (
-                                            <ChevronRight size={14} />
+                                            <ChevronRight size={15} />
                                         )}
                                     </button>
                                     <button
                                         onClick={() =>
                                             setConfirmDeleteId(task.id)
                                         }
-                                        className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-danger hover:bg-danger/10 rounded-lg transition-colors"
+                                        className="flex items-center justify-center w-9 h-9 text-[#484f58] hover:text-[#f85149] hover:bg-[#f85149]/10 rounded-lg transition-colors"
                                         title="Delete task"
                                     >
-                                        <Trash2 size={14} />
+                                        <Trash2 size={15} />
                                     </button>
                                 </div>
                             </div>
 
+                            {/* Subtasks */}
                             {isExpanded && subtasks.length > 0 && (
-                                <div className="border-t border-border/50">
+                                <div className="border-t border-[#21262d]/50">
                                     {subtasks.map((sub) => {
                                         const subDone =
                                             sub.status === "completed";
                                         return (
                                             <div
                                                 key={sub.id}
-                                                className="flex items-center gap-3 pl-12 pr-4 py-2 hover:bg-bg/40 transition-colors"
+                                                className="flex items-center gap-3 pl-14 pr-5 py-2.5 hover:bg-[#0d1117]/40 transition-colors"
                                             >
                                                 <button
                                                     onClick={() =>
                                                         handleToggleStatus(sub)
                                                     }
-                                                    className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md hover:bg-surface-2 transition-colors"
+                                                    className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-[#21262d] transition-colors"
+                                                    title={`Status: ${sub.status} — click to toggle`}
                                                 >
                                                     {subDone ? (
                                                         <CheckSquare
-                                                            size={13}
-                                                            className="text-success"
+                                                            size={14}
+                                                            className="text-[#7ee787]"
                                                         />
                                                     ) : (
                                                         <Circle
-                                                            size={13}
-                                                            className="text-border-2"
+                                                            size={14}
+                                                            className="text-[#30363d]"
                                                         />
                                                     )}
                                                 </button>
                                                 <span
-                                                    className={`flex-1 text-sm truncate ${subDone ? "line-through text-text-3" : "text-text"}`}
+                                                    className={`flex-1 text-sm truncate ${
+                                                        subDone
+                                                            ? "line-through text-[#484f58]"
+                                                            : "text-[#c9d1d9]"
+                                                    }`}
                                                 >
                                                     {sub.title}
                                                 </span>
                                                 {sub.due && (
-                                                    <span className="flex items-center gap-1 text-xs text-text-3 flex-shrink-0">
+                                                    <span className="flex items-center gap-1 text-xs text-[#484f58] flex-shrink-0">
                                                         <Clock size={11} />
                                                         {format(
                                                             new Date(sub.due),
@@ -606,9 +633,10 @@ export default function TasksPage() {
                                                             sub.id,
                                                         )
                                                     }
-                                                    className="w-6 h-6 flex items-center justify-center text-border-2 hover:text-danger hover:bg-danger/10 rounded-md transition-colors flex-shrink-0"
+                                                    className="flex items-center justify-center w-7 h-7 text-[#30363d] hover:text-[#f85149] hover:bg-[#f85149]/10 rounded-md transition-colors flex-shrink-0"
+                                                    title="Delete subtask"
                                                 >
-                                                    <Trash2 size={12} />
+                                                    <Trash2 size={13} />
                                                 </button>
                                             </div>
                                         );
@@ -617,8 +645,8 @@ export default function TasksPage() {
                             )}
 
                             {isExpanded && task.notes && (
-                                <div className="px-5 pb-4 pt-2 border-t border-border/50">
-                                    <p className="text-sm text-text-2 italic leading-relaxed px-2 pt-2">
+                                <div className="px-6 pb-6 pt-2 border-t border-[#21262d]/50">
+                                    <p className="text-sm text-[#8b949e] italic leading-relaxed px-2 pt-2">
                                         {task.notes}
                                     </p>
                                 </div>
@@ -627,9 +655,9 @@ export default function TasksPage() {
                     );
                 })}
                 {topLevel.length === 0 && (
-                    <div className="flex flex-col items-center justify-center gap-3 py-20 text-text-3">
-                        <CheckSquare size={32} />
-                        <p className="text-sm">
+                    <div className="flex flex-col items-center justify-center gap-3.5 py-20 text-[#484f58]">
+                        <CheckSquare size={36} />
+                        <p className="text-base">
                             {filter === "all"
                                 ? "No tasks yet. Create one!"
                                 : `No ${filterLabel(filter).toLowerCase()} tasks.`}
@@ -641,18 +669,18 @@ export default function TasksPage() {
             {/* Confirm delete dialog */}
             {confirmDeleteId !== null && (
                 <div
-                    className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
                     onClick={() => setConfirmDeleteId(null)}
                 >
                     <div
-                        className="bg-surface border border-border-2 rounded-xl w-full max-w-sm shadow-2xl p-6 flex flex-col gap-4"
+                        className="bg-[#161b22] border border-[#30363d] rounded-lg w-full max-w-sm shadow-2xl p-6 flex flex-col gap-4"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex flex-col gap-1">
-                            <h3 className="text-sm font-semibold text-text">
+                            <h3 className="text-base font-semibold text-[#f0f6fc]">
                                 Delete task?
                             </h3>
-                            <p className="text-sm text-text-2 leading-relaxed">
+                            <p className="text-sm text-[#8b949e] leading-relaxed">
                                 This task will be permanently removed from
                                 Google Tasks.
                             </p>
@@ -660,7 +688,7 @@ export default function TasksPage() {
                         <div className="flex gap-3 justify-end">
                             <button
                                 onClick={() => setConfirmDeleteId(null)}
-                                className="px-4 py-2 text-sm text-text-2 border border-border-2 rounded-lg hover:text-text hover:bg-surface-2 transition-colors"
+                                className="px-5 py-2.5 text-sm text-[#8b949e] border border-[#30363d] rounded-lg hover:text-[#f0f6fc] hover:bg-[#21262d] transition-colors"
                             >
                                 Cancel
                             </button>
@@ -669,7 +697,7 @@ export default function TasksPage() {
                                     handleDeleteTask(confirmDeleteId);
                                     setConfirmDeleteId(null);
                                 }}
-                                className="px-4 py-2 text-sm font-semibold text-white bg-danger rounded-lg hover:bg-red-600 transition-colors"
+                                className="px-5 py-2.5 text-sm font-semibold text-white bg-[#f85149] rounded-lg hover:bg-[#da3633] transition-colors"
                             >
                                 Delete
                             </button>

@@ -54,11 +54,13 @@ const EVENT_COLORS: Record<string, string> = {
 };
 
 function eventColor(event: CalendarEvent): string {
-    return EVENT_COLORS[event.colorId ?? ""] ?? "#818cf8";
+    return EVENT_COLORS[event.colorId ?? ""] ?? "#58a6ff";
 }
+
 function eventStart(event: CalendarEvent): Date {
     return parseISO(event.start.dateTime ?? event.start.date ?? "");
 }
+
 function eventEnd(event: CalendarEvent): Date {
     return parseISO(event.end.dateTime ?? event.end.date ?? "");
 }
@@ -108,6 +110,7 @@ export default function CalendarPage() {
             }),
     });
 
+    // Form state
     const [formTitle, setFormTitle] = useState("");
     const [formStart, setFormStart] = useState("");
     const [formEnd, setFormEnd] = useState("");
@@ -116,6 +119,7 @@ export default function CalendarPage() {
     const [formLocation, setFormLocation] = useState("");
     const [saving, setSaving] = useState(false);
 
+    // Watch for prefill from other pages
     useEffect(() => {
         if (!state.calendarPrefill) return;
         const pf = state.calendarPrefill;
@@ -123,6 +127,8 @@ export default function CalendarPage() {
         setCreateDate(dateStr);
         setFormTitle(pf.title);
         setFormDesc(pf.description ?? "");
+
+        // Use startHint/endHint if available (ISO datetime from AI), else fall back to defaults
         if (pf.startHint) {
             try {
                 const startDt = new Date(pf.startHint);
@@ -141,6 +147,7 @@ export default function CalendarPage() {
             setFormStart(`${dateStr}T09:00`);
             setFormAllDay(false);
         }
+
         if (pf.endHint) {
             try {
                 const endDt = new Date(pf.endHint);
@@ -155,11 +162,13 @@ export default function CalendarPage() {
         } else {
             setFormEnd(`${dateStr}T10:00`);
         }
+
         setFormLocation("");
         setCreateOpen(true);
         dispatch({ type: "CLEAR_CALENDAR_PREFILL" });
     }, [state.calendarPrefill, dispatch]);
 
+    // Fetch events when cursor month changes
     useEffect(() => {
         const timeMin = startOfMonth(subMonths(cursor, 1)).toISOString();
         const timeMax = endOfMonth(addMonths(cursor, 1)).toISOString();
@@ -167,10 +176,12 @@ export default function CalendarPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cursor]);
 
+    // Sync events to global context for AI assistant
     useEffect(() => {
         dispatch({ type: "SET_CALENDAR_EVENTS", events: cal.events });
     }, [cal.events, dispatch]);
 
+    // Auto-refresh
     useEffect(() => {
         const interval = state.pageSettings.general.autoRefreshInterval;
         if (!interval) return;
@@ -257,12 +268,14 @@ export default function CalendarPage() {
         setImportPanelOpen(false);
     }
 
+    // Month grid
     const monthStart = startOfMonth(cursor);
     const monthEnd = endOfMonth(cursor);
     const gridStart = startOfWeek(monthStart, { weekStartsOn: 0 });
     const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
     const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
 
+    // Week grid
     const weekStart = startOfWeek(cursor, { weekStartsOn: 0 });
     const weekEnd = endOfWeek(cursor, { weekStartsOn: 0 });
     const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
@@ -279,39 +292,39 @@ export default function CalendarPage() {
     }
 
     return (
-        <div className="flex flex-col flex-1 overflow-hidden bg-bg">
+        <div className="flex flex-col flex-1 overflow-hidden bg-[#0d1117]">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-3 border-b border-border bg-bg flex-shrink-0">
-                <div className="flex items-center gap-2.5">
-                    <div className="flex items-center border border-border-2 rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#21262d] bg-[#0d1117] flex-shrink-0">
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center border border-[#30363d] rounded-lg overflow-hidden">
                         <button
                             onClick={() => navigate(-1)}
-                            className="w-8 h-8 flex items-center justify-center text-text-2 hover:text-text hover:bg-surface transition-colors"
+                            className="w-9 h-9 flex items-center justify-center text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#161b22] transition-colors"
                         >
-                            <ChevronLeft size={15} />
+                            <ChevronLeft size={16} />
                         </button>
                         <button
                             onClick={() => navigate(1)}
-                            className="w-8 h-8 flex items-center justify-center text-text-2 hover:text-text hover:bg-surface transition-colors border-l border-border-2"
+                            className="w-9 h-9 flex items-center justify-center text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#161b22] transition-colors border-l border-[#30363d]"
                         >
-                            <ChevronRight size={15} />
+                            <ChevronRight size={16} />
                         </button>
                     </div>
                     <button
                         onClick={() => setCursor(new Date())}
-                        className="px-3 py-1.5 text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:border-accent hover:text-accent transition-all"
+                        className="px-4 py-2 text-sm font-medium text-[#8b949e] border border-[#30363d] rounded-lg hover:border-[#58a6ff] hover:text-[#58a6ff] hover:bg-[#58a6ff]/5 transition-all"
                     >
                         Today
                     </button>
-                    <h2 className="text-sm font-semibold text-text ml-1">
+                    <h2 className="text-base font-semibold text-[#f0f6fc] ml-1">
                         {view === "month"
                             ? format(cursor, "MMMM yyyy")
                             : `${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`}
                     </h2>
                     {cal.loading && (
                         <Loader2
-                            size={13}
-                            className="animate-spin text-text-3 ml-1"
+                            size={14}
+                            className="animate-spin text-[#484f58] ml-1"
                         />
                     )}
                     <button
@@ -325,38 +338,38 @@ export default function CalendarPage() {
                             cal.fetchEvents(timeMin, timeMax);
                         }}
                         disabled={cal.loading}
-                        className="w-8 h-8 flex items-center justify-center text-text-2 hover:text-text hover:bg-surface border border-border-2 rounded-lg transition-colors ml-1 disabled:opacity-40"
+                        className="w-9 h-9 flex items-center justify-center text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#161b22] border border-[#30363d] rounded-lg transition-colors ml-1 disabled:opacity-40"
                         title="Refresh events"
                     >
                         {cal.loading ? (
-                            <Loader2 size={13} className="animate-spin" />
+                            <Loader2 size={14} className="animate-spin" />
                         ) : (
-                            <RefreshCw size={13} />
+                            <RefreshCw size={14} />
                         )}
                     </button>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                     <button
                         onClick={() => setImportPanelOpen(!importPanelOpen)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border rounded-lg transition-all ${
+                        className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border rounded-lg transition-all ${
                             importPanelOpen
-                                ? "border-accent text-accent bg-accent/10"
-                                : "border-border-2 text-text-2 hover:border-accent hover:text-accent"
+                                ? "border-[#58a6ff] text-[#58a6ff] bg-[#58a6ff]/10"
+                                : "border-[#30363d] text-[#8b949e] hover:border-[#58a6ff] hover:text-[#58a6ff] hover:bg-[#58a6ff]/5"
                         }`}
                         title="Import from Notes or Tasks"
                     >
-                        <Download size={13} /> Import
+                        <Download size={14} /> Import
                     </button>
-                    <div className="flex border border-border-2 rounded-lg overflow-hidden">
+                    <div className="flex border border-[#30363d] rounded-lg overflow-hidden">
                         {(["month", "week"] as ViewMode[]).map((v) => (
                             <button
                                 key={v}
                                 onClick={() => setView(v)}
-                                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                                className={`px-4 py-2 text-sm font-medium transition-colors ${
                                     view === v
-                                        ? "bg-accent/15 text-accent"
-                                        : "text-text-2 hover:text-text hover:bg-surface"
-                                } ${v === "week" ? "border-l border-border-2" : ""}`}
+                                        ? "bg-[#1f4a7a] text-[#58a6ff]"
+                                        : "text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#161b22]"
+                                } ${v === "week" ? "border-l border-[#30363d]" : ""}`}
                             >
                                 {v.charAt(0).toUpperCase() + v.slice(1)}
                             </button>
@@ -364,9 +377,9 @@ export default function CalendarPage() {
                     </div>
                     <button
                         onClick={() => openCreate()}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-all"
+                        className="flex items-center gap-2 px-5 py-2.5 bg-[#58a6ff] text-white text-sm font-semibold rounded-lg hover:bg-[#388bfd] transition-all shadow-md shadow-[#58a6ff]/20"
                     >
-                        <Plus size={14} /> New event
+                        <Plus size={15} /> New event
                     </button>
                 </div>
             </div>
@@ -376,7 +389,7 @@ export default function CalendarPage() {
                 <div className="flex-1 flex flex-col overflow-hidden">
                     {view === "month" ? (
                         <div className="flex-1 flex flex-col overflow-hidden">
-                            <div className="grid grid-cols-7 border-b border-border">
+                            <div className="grid grid-cols-7 border-b border-[#21262d]">
                                 {[
                                     "Sun",
                                     "Mon",
@@ -388,7 +401,7 @@ export default function CalendarPage() {
                                 ].map((d) => (
                                     <div
                                         key={d}
-                                        className="py-2 text-center text-xs text-text-3 font-semibold uppercase tracking-widest"
+                                        className="py-2.5 text-center text-xs text-[#484f58] font-semibold uppercase tracking-widest"
                                     >
                                         {d}
                                     </div>
@@ -412,14 +425,20 @@ export default function CalendarPage() {
                                                     format(day, "yyyy-MM-dd"),
                                                 )
                                             }
-                                            className={`border-r border-b border-border/50 p-1.5 cursor-pointer transition-colors hover:bg-surface ${!inMonth ? "opacity-30" : ""}`}
+                                            className={`border-r border-b border-[#161b22] p-2 cursor-pointer transition-colors hover:bg-[#161b22] ${
+                                                !inMonth ? "opacity-35" : ""
+                                            }`}
                                         >
                                             <div
-                                                className={`w-6 h-6 flex items-center justify-center rounded-full text-xs mb-1 font-medium ${today ? "bg-accent text-white font-bold" : "text-text-2"}`}
+                                                className={`w-7 h-7 flex items-center justify-center rounded-full text-xs mb-1.5 font-medium ${
+                                                    today
+                                                        ? "bg-[#58a6ff] text-white font-bold"
+                                                        : "text-[#8b949e]"
+                                                }`}
                                             >
                                                 {format(day, "d")}
                                             </div>
-                                            <div className="flex flex-col gap-0.5">
+                                            <div className="flex flex-col gap-1">
                                                 {dayEvents
                                                     .slice(0, 3)
                                                     .map((ev) => (
@@ -431,7 +450,7 @@ export default function CalendarPage() {
                                                                     ev,
                                                                 );
                                                             }}
-                                                            className="w-full text-left text-xs px-1.5 py-0.5 rounded truncate font-medium transition-opacity hover:opacity-80"
+                                                            className="w-full text-left text-xs px-1.5 py-0.5 rounded-lg truncate font-medium transition-opacity hover:opacity-80"
                                                             style={{
                                                                 backgroundColor:
                                                                     eventColor(
@@ -465,7 +484,7 @@ export default function CalendarPage() {
                                                         </button>
                                                     ))}
                                                 {dayEvents.length > 3 && (
-                                                    <span className="text-xs text-text-3 px-1.5">
+                                                    <span className="text-xs text-[#484f58] px-1.5">
                                                         +{dayEvents.length - 3}{" "}
                                                         more
                                                     </span>
@@ -480,7 +499,7 @@ export default function CalendarPage() {
                         /* Week view */
                         <div className="flex-1 flex flex-col overflow-hidden">
                             <div
-                                className="grid border-b border-border"
+                                className="grid border-b border-[#21262d]"
                                 style={{
                                     gridTemplateColumns: "60px repeat(7, 1fr)",
                                 }}
@@ -489,30 +508,39 @@ export default function CalendarPage() {
                                 {weekDays.map((day) => (
                                     <div
                                         key={day.toISOString()}
-                                        className={`py-2.5 text-center border-l border-border ${isToday(day) ? "text-accent" : "text-text-2"}`}
+                                        className={`py-3 text-center border-l border-[#21262d] ${
+                                            isToday(day)
+                                                ? "text-[#58a6ff]"
+                                                : "text-[#8b949e]"
+                                        }`}
                                     >
                                         <div className="text-xs uppercase tracking-wider font-semibold">
                                             {format(day, "EEE")}
                                         </div>
                                         <div
-                                            className={`text-sm font-bold mx-auto mt-1 w-7 h-7 flex items-center justify-center rounded-full ${isToday(day) ? "bg-accent text-white" : ""}`}
+                                            className={`text-sm font-bold mx-auto mt-1 w-8 h-8 flex items-center justify-center rounded-full ${
+                                                isToday(day)
+                                                    ? "bg-[#58a6ff] text-white"
+                                                    : ""
+                                            }`}
                                         >
                                             {format(day, "d")}
                                         </div>
                                     </div>
                                 ))}
                             </div>
+                            {/* All-day events row */}
                             {weekDays.some((day) =>
                                 eventsOnDay(day).some((e) => !e.start.dateTime),
                             ) && (
                                 <div
-                                    className="grid border-b border-border bg-bg"
+                                    className="grid border-b border-[#21262d] bg-[#0d1117]"
                                     style={{
                                         gridTemplateColumns:
                                             "60px repeat(7, 1fr)",
                                     }}
                                 >
-                                    <div className="flex items-center justify-end pr-3 text-xs text-text-3 font-medium py-1.5">
+                                    <div className="flex items-center justify-end pr-3 text-xs text-[#484f58] font-medium py-1.5">
                                         all-day
                                     </div>
                                     {weekDays.map((day) => {
@@ -522,7 +550,7 @@ export default function CalendarPage() {
                                         return (
                                             <div
                                                 key={`ad-${day.toISOString()}`}
-                                                className="border-l border-border px-1 py-1.5 flex flex-col gap-0.5"
+                                                className="border-l border-[#21262d] px-1 py-1.5 flex flex-col gap-0.5"
                                             >
                                                 {allDayEvents.map((ev) => (
                                                     <button
@@ -562,7 +590,7 @@ export default function CalendarPage() {
                                             <div
                                                 key={h}
                                                 style={{ height: 56 }}
-                                                className="flex items-start justify-end pr-3 pt-1 text-xs text-text-3 font-medium"
+                                                className="flex items-start justify-end pr-3 pt-1 text-xs text-[#484f58] font-medium"
                                             >
                                                 {h === 0
                                                     ? ""
@@ -585,7 +613,7 @@ export default function CalendarPage() {
                                         return (
                                             <div
                                                 key={day.toISOString()}
-                                                className="border-l border-border relative hover:bg-surface/30 transition-colors cursor-pointer"
+                                                className="border-l border-[#21262d] relative hover:bg-[#161b22]/30 transition-colors cursor-pointer"
                                                 onClick={() =>
                                                     openCreate(
                                                         format(
@@ -599,7 +627,7 @@ export default function CalendarPage() {
                                                     <div
                                                         key={h}
                                                         style={{ height: 56 }}
-                                                        className="border-b border-border/30"
+                                                        className="border-b border-[#161b22]"
                                                     />
                                                 ))}
                                                 {dayEvents.map((ev) => {
@@ -686,7 +714,7 @@ export default function CalendarPage() {
                 {/* Import panel */}
                 {importPanelOpen && (
                     <aside
-                        className="flex-shrink-0 flex flex-col border-l border-border bg-bg overflow-hidden relative"
+                        className="flex-shrink-0 flex flex-col border-l border-[#21262d] bg-[#0d1117] overflow-hidden relative"
                         style={{
                             width: importResize.width,
                             animation: "slideInRight 200ms ease-out",
@@ -697,16 +725,19 @@ export default function CalendarPage() {
                             style={{ left: 0 }}
                             onMouseDown={importResize.onMouseDown}
                         />
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-[#21262d]">
                             <div className="flex items-center gap-2">
-                                <Download size={13} className="text-accent" />
-                                <span className="text-xs font-semibold text-text">
+                                <Download
+                                    size={13}
+                                    className="text-[#58a6ff]"
+                                />
+                                <span className="text-xs font-semibold text-[#f0f6fc]">
                                     Import to Calendar
                                 </span>
                             </div>
                             <button
                                 onClick={() => setImportPanelOpen(false)}
-                                className="text-text-3 hover:text-text p-1 rounded-lg hover:bg-surface-2 transition-colors"
+                                className="text-[#484f58] hover:text-[#f0f6fc] p-1 rounded-lg hover:bg-[#21262d] transition-colors"
                             >
                                 <X size={14} />
                             </button>
@@ -714,8 +745,8 @@ export default function CalendarPage() {
                         <div className="flex-1 overflow-y-auto">
                             {state.tasks.length > 0 && (
                                 <div>
-                                    <div className="flex items-center gap-1.5 px-4 py-2 text-xs uppercase tracking-widest text-text-3 font-semibold border-b border-border/50 sticky top-0 bg-bg">
-                                        <CheckSquare size={12} /> Tasks
+                                    <div className="flex items-center gap-1.5 px-4 py-2.5 text-xs uppercase tracking-widest text-[#484f58] font-semibold border-b border-[#161b22] sticky top-0 bg-[#0d1117]">
+                                        <CheckSquare size={13} /> Tasks
                                     </div>
                                     {state.tasks
                                         .filter((t) => t.status !== "done")
@@ -725,14 +756,14 @@ export default function CalendarPage() {
                                                 onClick={() =>
                                                     importFromTask(task)
                                                 }
-                                                className="w-full flex flex-col gap-0.5 px-4 py-2.5 text-left border-b border-border/30 hover:bg-surface transition-colors"
+                                                className="w-full flex flex-col gap-0.5 px-4 py-3 text-left border-b border-[#161b22] hover:bg-[#161b22] transition-colors"
                                             >
-                                                <span className="text-xs text-text truncate">
+                                                <span className="text-xs text-[#f0f6fc] truncate">
                                                     {task.title}
                                                 </span>
                                                 {task.dueDate && (
-                                                    <span className="text-xs text-text-3 flex items-center gap-1">
-                                                        <Clock size={11} />
+                                                    <span className="text-xs text-[#484f58] flex items-center gap-1">
+                                                        <Clock size={12} />
                                                         {format(
                                                             new Date(
                                                                 task.dueDate,
@@ -742,7 +773,14 @@ export default function CalendarPage() {
                                                     </span>
                                                 )}
                                                 <span
-                                                    className={`text-xs font-medium ${task.priority === "high" ? "text-danger" : task.priority === "medium" ? "text-warning" : "text-text-3"}`}
+                                                    className={`text-xs font-medium ${
+                                                        task.priority === "high"
+                                                            ? "text-[#f85149]"
+                                                            : task.priority ===
+                                                                "medium"
+                                                              ? "text-[#d29922]"
+                                                              : "text-[#484f58]"
+                                                    }`}
                                                 >
                                                     {task.priority}
                                                 </span>
@@ -752,19 +790,19 @@ export default function CalendarPage() {
                             )}
                             {state.notes.length > 0 && (
                                 <div>
-                                    <div className="flex items-center gap-1.5 px-4 py-2 text-xs uppercase tracking-widest text-text-3 font-semibold border-b border-border/50 sticky top-0 bg-bg">
-                                        <FileText size={12} /> Notes
+                                    <div className="flex items-center gap-1.5 px-4 py-2.5 text-xs uppercase tracking-widest text-[#484f58] font-semibold border-b border-[#161b22] sticky top-0 bg-[#0d1117]">
+                                        <FileText size={13} /> Notes
                                     </div>
                                     {state.notes.map((note) => (
                                         <button
                                             key={note.id}
                                             onClick={() => importFromNote(note)}
-                                            className="w-full flex flex-col gap-0.5 px-4 py-2.5 text-left border-b border-border/30 hover:bg-surface transition-colors"
+                                            className="w-full flex flex-col gap-0.5 px-4 py-3 text-left border-b border-[#161b22] hover:bg-[#161b22] transition-colors"
                                         >
-                                            <span className="text-xs text-text truncate">
+                                            <span className="text-xs text-[#f0f6fc] truncate">
                                                 {note.title}
                                             </span>
-                                            <span className="text-xs text-text-3 truncate">
+                                            <span className="text-xs text-[#484f58] truncate">
                                                 {note.content
                                                     .replace(/[#*_`\n]/g, " ")
                                                     .slice(0, 50)}
@@ -777,10 +815,10 @@ export default function CalendarPage() {
                                 state.notes.length === 0 && (
                                     <div className="flex flex-col items-center justify-center gap-3 py-10 px-4 text-center">
                                         <Download
-                                            size={20}
-                                            className="text-text-3"
+                                            size={24}
+                                            className="text-[#484f58]"
                                         />
-                                        <p className="text-xs text-text-3 leading-relaxed">
+                                        <p className="text-xs text-[#484f58] leading-relaxed">
                                             No tasks or notes loaded yet.
                                             <br />
                                             Open some in Tasks or Notes first.
@@ -795,31 +833,31 @@ export default function CalendarPage() {
             {/* Event detail panel */}
             {selectedEvent && (
                 <div
-                    className="absolute top-0 right-0 bottom-0 w-80 bg-bg border-l border-border flex flex-col z-40 shadow-2xl"
+                    className="absolute top-0 right-0 bottom-0 w-80 bg-[#0d1117] border-l border-[#21262d] flex flex-col z-40 shadow-2xl"
                     style={{ animation: "slideInRight 200ms ease-out" }}
                 >
                     <div
                         className="h-1 flex-shrink-0"
                         style={{ backgroundColor: eventColor(selectedEvent) }}
                     />
-                    <div className="flex items-start justify-between px-5 py-4 border-b border-border">
+                    <div className="flex items-start justify-between px-5 py-4 border-b border-[#21262d]">
                         <div className="flex-1 min-w-0 pr-3">
-                            <span className="text-sm font-semibold text-text leading-snug block">
+                            <span className="text-sm font-semibold text-[#f0f6fc] leading-snug block">
                                 {selectedEvent.summary}
                             </span>
                         </div>
                         <button
                             onClick={() => setSelectedEvent(null)}
-                            className="text-text-3 hover:text-text p-1.5 rounded-lg hover:bg-surface transition-colors flex-shrink-0"
+                            className="text-[#484f58] hover:text-[#f0f6fc] p-1.5 rounded-lg hover:bg-[#161b22] transition-colors flex-shrink-0"
                         >
-                            <X size={14} />
+                            <X size={15} />
                         </button>
                     </div>
                     <div className="flex flex-col gap-4 px-5 py-4 flex-1 overflow-y-auto">
-                        <div className="flex items-start gap-3 text-sm text-text-2">
+                        <div className="flex items-start gap-3 text-sm text-[#8b949e]">
                             <Clock
-                                size={14}
-                                className="flex-shrink-0 mt-0.5 text-text-3"
+                                size={15}
+                                className="flex-shrink-0 mt-0.5 text-[#484f58]"
                             />
                             <div className="leading-relaxed">
                                 {selectedEvent.start.dateTime
@@ -831,10 +869,10 @@ export default function CalendarPage() {
                             </div>
                         </div>
                         {selectedEvent.location && (
-                            <div className="flex items-start gap-3 text-sm text-text-2">
+                            <div className="flex items-start gap-3 text-sm text-[#8b949e]">
                                 <MapPin
-                                    size={14}
-                                    className="flex-shrink-0 mt-0.5 text-text-3"
+                                    size={15}
+                                    className="flex-shrink-0 mt-0.5 text-[#484f58]"
                                 />
                                 <span className="leading-relaxed">
                                     {selectedEvent.location}
@@ -842,10 +880,10 @@ export default function CalendarPage() {
                             </div>
                         )}
                         {selectedEvent.description && (
-                            <div className="flex items-start gap-3 text-sm text-text-2">
+                            <div className="flex items-start gap-3 text-sm text-[#8b949e]">
                                 <AlignLeft
-                                    size={14}
-                                    className="flex-shrink-0 mt-0.5 text-text-3"
+                                    size={15}
+                                    className="flex-shrink-0 mt-0.5 text-[#484f58]"
                                 />
                                 <span className="leading-relaxed">
                                     {selectedEvent.description}
@@ -856,7 +894,7 @@ export default function CalendarPage() {
                     <div className="px-5 pb-5">
                         <button
                             onClick={() => handleDelete(selectedEvent.id)}
-                            className="w-full py-2 text-sm font-medium text-danger border border-danger/25 rounded-lg hover:bg-danger/8 hover:border-danger/50 transition-all"
+                            className="w-full py-2.5 text-sm font-medium text-[#f85149] border border-[#f85149]/25 rounded-lg hover:bg-[#f85149]/8 hover:border-[#f85149]/50 transition-all"
                         >
                             Delete event
                         </button>
@@ -867,29 +905,29 @@ export default function CalendarPage() {
             {/* Create event modal */}
             {createOpen && (
                 <div
-                    className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+                    className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4"
                     onClick={() => setCreateOpen(false)}
                 >
                     <div
-                        className="bg-surface border border-border-2 rounded-xl w-full max-w-[480px] shadow-2xl overflow-hidden"
+                        className="bg-[#161b22] border border-[#30363d] rounded-lg w-full max-w-[520px] shadow-2xl overflow-hidden"
                         style={{
                             animation: "slideUpLocal 0.18s ease-out both",
                         }}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+                        <div className="flex items-center justify-between px-6 py-5 border-b border-[#21262d]">
                             <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 bg-accent/15 border border-accent/25 rounded-lg flex items-center justify-center">
+                                <div className="w-9 h-9 bg-[#58a6ff]/15 border border-[#58a6ff]/25 rounded-lg flex items-center justify-center">
                                     <CalIcon
-                                        size={15}
-                                        className="text-accent"
+                                        size={16}
+                                        className="text-[#58a6ff]"
                                     />
                                 </div>
                                 <div>
-                                    <span className="text-sm font-semibold text-text block leading-tight">
+                                    <span className="text-base font-semibold text-[#f0f6fc] block leading-tight">
                                         New Event
                                     </span>
-                                    <span className="text-xs text-text-3">
+                                    <span className="text-xs text-[#484f58]">
                                         {format(
                                             new Date(createDate + "T00:00"),
                                             "EEEE, MMMM d",
@@ -899,15 +937,15 @@ export default function CalendarPage() {
                             </div>
                             <button
                                 onClick={() => setCreateOpen(false)}
-                                className="text-text-3 hover:text-text p-1.5 rounded-lg hover:bg-surface-2 transition-colors"
+                                className="text-[#484f58] hover:text-[#e6edf3] p-2 rounded-lg hover:bg-[#161b22] transition-colors"
                             >
-                                <X size={14} />
+                                <X size={15} />
                             </button>
                         </div>
-                        <div className="flex flex-col gap-4 px-6 py-5">
+                        <div className="flex flex-col gap-5 px-6 py-6">
                             <input
                                 autoFocus
-                                className="w-full bg-transparent border-b border-border-2 px-0 py-2 text-base font-semibold text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
+                                className="w-full bg-transparent border-b border-[#30363d] px-0 py-2 text-lg font-semibold text-[#f0f6fc] outline-none focus:border-[#58a6ff] placeholder:text-[#484f58] transition-colors"
                                 placeholder="Add a title..."
                                 value={formTitle}
                                 onChange={(e) => setFormTitle(e.target.value)}
@@ -919,24 +957,32 @@ export default function CalendarPage() {
                                 }
                             />
                             <div className="flex items-center justify-between">
-                                <span className="text-sm text-text-2">
+                                <span className="text-sm text-[#8b949e]">
                                     All day
                                 </span>
                                 <button
                                     type="button"
                                     onClick={() => setFormAllDay((v) => !v)}
-                                    className={`relative rounded-full transition-colors ${formAllDay ? "bg-accent" : "bg-border-2"}`}
+                                    className={`relative rounded-full transition-colors focus:outline-none ${
+                                        formAllDay
+                                            ? "bg-[#58a6ff]"
+                                            : "bg-[#30363d]"
+                                    }`}
                                     style={{ height: 22, width: 40 }}
                                 >
                                     <div
-                                        className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${formAllDay ? "translate-x-[19px]" : "translate-x-[3px]"}`}
+                                        className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                                            formAllDay
+                                                ? "translate-x-[19px]"
+                                                : "translate-x-[3px]"
+                                        }`}
                                     />
                                 </button>
                             </div>
                             {!formAllDay && (
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="flex flex-col gap-1">
-                                        <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-xs font-semibold text-[#484f58] uppercase tracking-widest">
                                             Start
                                         </label>
                                         <input
@@ -945,11 +991,11 @@ export default function CalendarPage() {
                                             onChange={(e) =>
                                                 setFormStart(e.target.value)
                                             }
-                                            className="w-full bg-bg border border-border-2 rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-accent transition-colors"
+                                            className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-3.5 py-2.5 text-sm text-[#e6edf3] outline-none focus:border-[#58a6ff] transition-colors"
                                         />
                                     </div>
-                                    <div className="flex flex-col gap-1">
-                                        <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-xs font-semibold text-[#484f58] uppercase tracking-widest">
                                             End
                                         </label>
                                         <input
@@ -958,18 +1004,18 @@ export default function CalendarPage() {
                                             onChange={(e) =>
                                                 setFormEnd(e.target.value)
                                             }
-                                            className="w-full bg-bg border border-border-2 rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-accent transition-colors"
+                                            className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-3.5 py-2.5 text-sm text-[#e6edf3] outline-none focus:border-[#58a6ff] transition-colors"
                                         />
                                     </div>
                                 </div>
                             )}
                             <div className="relative">
                                 <MapPin
-                                    size={14}
-                                    className="absolute left-3 top-1/2 -translate-y-1/2 text-text-3"
+                                    size={15}
+                                    className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#484f58]"
                                 />
                                 <input
-                                    className="w-full bg-bg border border-border-2 rounded-lg pl-9 pr-4 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
+                                    className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg pl-10 pr-4 py-3 text-sm text-[#e6edf3] outline-none focus:border-[#58a6ff] placeholder:text-[#484f58] transition-colors"
                                     placeholder="Add location"
                                     value={formLocation}
                                     onChange={(e) =>
@@ -979,11 +1025,11 @@ export default function CalendarPage() {
                             </div>
                             <div className="relative">
                                 <AlignLeft
-                                    size={14}
-                                    className="absolute left-3 top-3 text-text-3"
+                                    size={15}
+                                    className="absolute left-3.5 top-3.5 text-[#484f58]"
                                 />
                                 <textarea
-                                    className="w-full bg-bg border border-border-2 rounded-lg pl-9 pr-4 py-2.5 text-sm text-text outline-none focus:border-accent resize-none placeholder:text-text-3 transition-colors leading-relaxed"
+                                    className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg pl-10 pr-4 py-3 text-sm text-[#e6edf3] outline-none focus:border-[#58a6ff] resize-none placeholder:text-[#484f58] transition-colors leading-relaxed"
                                     placeholder="Add description"
                                     rows={3}
                                     value={formDesc}
@@ -995,22 +1041,22 @@ export default function CalendarPage() {
                             <div className="flex gap-3 pt-1">
                                 <button
                                     onClick={() => setCreateOpen(false)}
-                                    className="flex-1 py-2.5 text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:bg-surface-2 hover:text-text transition-all"
+                                    className="flex-1 py-3 text-sm font-medium text-[#8b949e] border border-[#30363d] rounded-lg hover:bg-[#21262d] hover:text-[#e6edf3] transition-all"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     onClick={handleCreate}
                                     disabled={saving || !formTitle}
-                                    className="flex-1 py-2.5 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                                    className="flex-1 py-3 bg-[#238636] text-white text-sm font-semibold rounded-lg hover:bg-[#2ea043] transition-all disabled:opacity-40 flex items-center justify-center gap-2 shadow-md shadow-[#238636]/25"
                                 >
                                     {saving ? (
                                         <Loader2
-                                            size={14}
+                                            size={15}
                                             className="animate-spin"
                                         />
                                     ) : (
-                                        <Plus size={14} />
+                                        <Plus size={15} />
                                     )}
                                     {saving ? "Saving..." : "Create event"}
                                 </button>

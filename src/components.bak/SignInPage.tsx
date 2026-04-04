@@ -4,17 +4,18 @@ import { signIn } from "next-auth/react";
 
 export default function SignInPage() {
     return (
-        <div className="min-h-screen flex items-center justify-center bg-bg">
+        <div className="min-h-screen flex items-center justify-center bg-[#010409]">
             <div
                 className="absolute inset-0 pointer-events-none"
                 style={{
                     background:
-                        "radial-gradient(ellipse 50% 35% at 50% 40%, #818cf812 0%, transparent 70%)",
+                        "radial-gradient(ellipse 60% 40% at 50% 40%, #1f6feb18 0%, transparent 70%)",
                 }}
             />
-            <div className="relative flex flex-col items-center gap-8 px-8 py-10 bg-surface border border-border-2 rounded-2xl shadow-2xl w-[340px]">
+
+            <div className="relative flex flex-col items-center gap-8 px-8 py-10 bg-[#0d1117] border border-[#30363d] rounded-2xl shadow-2xl w-[340px]">
                 <div className="flex flex-col items-center gap-3">
-                    <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center">
+                    <div className="w-12 h-12 bg-[#161b22] border border-[#30363d] rounded-xl flex items-center justify-center shadow-inner">
                         <svg
                             width="22"
                             height="22"
@@ -25,88 +26,89 @@ export default function SignInPage() {
                                 cx="4"
                                 cy="4"
                                 r="2.5"
-                                fill="#818cf8"
+                                fill="#58a6ff"
                                 opacity="0.9"
                             />
                             <circle
                                 cx="11"
                                 cy="4"
                                 r="2.5"
-                                fill="#818cf8"
+                                fill="#58a6ff"
                                 opacity="0.6"
                             />
                             <circle
                                 cx="18"
                                 cy="4"
                                 r="2.5"
-                                fill="#818cf8"
+                                fill="#58a6ff"
                                 opacity="0.3"
                             />
                             <circle
                                 cx="4"
                                 cy="11"
                                 r="2.5"
-                                fill="#818cf8"
+                                fill="#58a6ff"
                                 opacity="0.6"
                             />
                             <circle
                                 cx="11"
                                 cy="11"
                                 r="2.5"
-                                fill="#818cf8"
+                                fill="#58a6ff"
                                 opacity="0.9"
                             />
                             <circle
                                 cx="18"
                                 cy="11"
                                 r="2.5"
-                                fill="#818cf8"
+                                fill="#58a6ff"
                                 opacity="0.6"
                             />
                             <circle
                                 cx="4"
                                 cy="18"
                                 r="2.5"
-                                fill="#818cf8"
+                                fill="#58a6ff"
                                 opacity="0.3"
                             />
                             <circle
                                 cx="11"
                                 cy="18"
                                 r="2.5"
-                                fill="#818cf8"
+                                fill="#58a6ff"
                                 opacity="0.6"
                             />
                             <circle
                                 cx="18"
                                 cy="18"
                                 r="2.5"
-                                fill="#818cf8"
+                                fill="#58a6ff"
                                 opacity="0.9"
                             />
                         </svg>
                     </div>
                     <div className="text-center">
-                        <h1 className="text-xl font-bold text-text tracking-tight">
+                        <h1 className="text-xl font-bold text-[#e6edf3] tracking-tight">
                             Crewmate
                         </h1>
-                        <p className="text-xs text-text-3 mt-0.5">
+                        <p className="text-xs text-[#484f58] mt-0.5">
                             Personal productivity dashboard
                         </p>
                     </div>
                 </div>
 
-                <div className="w-full border-t border-border" />
+                <div className="w-full border-t border-[#21262d]" />
 
                 <div className="w-full flex flex-col gap-4">
-                    <p className="text-xs text-text-2 text-center leading-relaxed">
+                    <p className="text-xs text-[#8b949e] text-center leading-relaxed">
                         Sign in to access your Gmail and Google Calendar.
                     </p>
+
                     <button
                         onClick={() =>
                             signIn("google", { callbackUrl: "/app" })
                         }
-                        className="w-full flex items-center justify-center gap-2.5 py-2.5 bg-surface-2 border border-border-2 text-text text-sm font-semibold rounded-lg hover:border-accent hover:text-accent hover:bg-surface active:bg-bg transition-colors"
+                        className="w-full flex items-center justify-center gap-2.5 py-2.5 bg-[#21262d] border border-[#30363d] text-[#e6edf3] text-sm font-semibold rounded-lg hover:border-[#58a6ff] hover:text-[#58a6ff] hover:bg-[#161b22] active:bg-[#0d1117] transition-colors"
                     >
                         <svg
                             width="16"
@@ -135,7 +137,7 @@ export default function SignInPage() {
                     </button>
                 </div>
 
-                <p className="text-xs text-text-3 text-center leading-relaxed">
+                <p className="text-xs text-[#30363d] text-center leading-relaxed">
                     Requires Gmail and Google Calendar access
                 </p>
             </div>

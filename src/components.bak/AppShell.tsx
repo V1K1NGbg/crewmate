@@ -18,7 +18,7 @@ const CustomPage = lazy(() => import("./pages/CustomPage"));
 function PageFallback() {
     return (
         <div className="flex-1 flex items-center justify-center">
-            <div className="w-5 h-5 border-2 border-border border-t-accent rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-[#21262d] border-t-[#58a6ff] rounded-full animate-spin" />
         </div>
     );
 }
@@ -27,12 +27,14 @@ export default function AppShell() {
     const { state, dispatch } = useApp();
     const [settingsOpen, setSettingsOpen] = useState(false);
 
+    // Detect opencode server
     useEffect(() => {
         detectOpencodeServer(state.opencodeUrl).then((url) => {
             dispatch({ type: "SET_OPENCODE_AVAILABLE", available: !!url });
         });
     }, [state.opencodeUrl, dispatch]);
 
+    // Global keyboard shortcuts
     useEffect(() => {
         function handleKey(e: KeyboardEvent) {
             const tag = (e.target as HTMLElement).tagName;
@@ -43,6 +45,7 @@ export default function AppShell() {
                 (e.target as HTMLElement).isContentEditable;
             if (isEditing) return;
 
+            // Number keys 1-9: switch pages
             if (
                 !e.ctrlKey &&
                 !e.metaKey &&
@@ -56,6 +59,7 @@ export default function AppShell() {
                 }
                 return;
             }
+            // O: toggle AI assistant
             if (e.key === "o" && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
                 dispatch({
@@ -64,6 +68,7 @@ export default function AppShell() {
                 });
                 return;
             }
+            // Escape: close overlay or settings
             if (e.key === "Escape") {
                 if (state.opencodeOverlayOpen) {
                     dispatch({
@@ -83,7 +88,7 @@ export default function AppShell() {
         state.pages.find((p) => p.id === state.activePage) ?? state.pages[0];
 
     return (
-        <div className="flex h-screen overflow-hidden bg-bg">
+        <div className="flex h-screen overflow-hidden bg-[#010409]">
             <Navigation />
             <div className="flex flex-col flex-1 overflow-hidden min-w-0">
                 <TopBar
@@ -92,6 +97,7 @@ export default function AppShell() {
                 />
                 <div className="flex flex-1 overflow-hidden relative">
                     <Suspense fallback={<PageFallback />}>
+                        {/* Keep all pages mounted; hide inactive ones with CSS */}
                         {state.pages.map((page) => {
                             const isActive = page.id === activePage?.id;
                             if (page.type === "mail")
@@ -157,7 +163,7 @@ export default function AppShell() {
                             return null;
                         })}
                         {!activePage && (
-                            <div className="flex-1 flex items-center justify-center text-text-3 text-sm">
+                            <div className="flex-1 flex items-center justify-center text-[#484f58] text-base">
                                 Unknown page
                             </div>
                         )}
@@ -177,27 +183,27 @@ export default function AppShell() {
                 </div>
 
                 {/* Status bar */}
-                <div className="h-8 flex items-center px-5 bg-bg border-t border-border gap-4 flex-shrink-0 overflow-hidden">
+                <div className="h-9 flex items-center px-5 bg-[#010409] border-t border-[#21262d]/50 gap-5 flex-shrink-0 overflow-hidden">
                     {state.pages.slice(0, 9).map((p) => (
                         <button
                             key={p.id}
                             onClick={() =>
                                 dispatch({ type: "SET_ACTIVE_PAGE", id: p.id })
                             }
-                            className={`flex items-center gap-1.5 text-xs transition-colors ${
+                            className={`flex items-center gap-1.5 text-sm transition-colors ${
                                 state.activePage === p.id
-                                    ? "text-accent"
-                                    : "text-text-3 hover:text-text-2"
+                                    ? "text-[#58a6ff]"
+                                    : "text-[#30363d] hover:text-[#484f58]"
                             }`}
                         >
-                            <kbd className="font-mono text-xs opacity-60">
+                            <kbd className="font-mono text-sm">
                                 {p.keybinding}
                             </kbd>
                             <span>{p.label}</span>
                         </button>
                     ))}
-                    <span className="ml-auto flex items-center gap-1.5 text-xs text-text-3">
-                        <kbd className="font-mono text-xs opacity-60">O</kbd>
+                    <span className="ml-auto flex items-center gap-1.5 text-sm text-[#30363d]">
+                        <kbd className="font-mono text-sm">O</kbd>
                         <span>AI</span>
                     </span>
                 </div>

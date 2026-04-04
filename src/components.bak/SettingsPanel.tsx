@@ -34,6 +34,7 @@ type SectionId = (typeof SECTIONS)[number]["id"];
 
 export default function SettingsPanel({ onClose }: { onClose: () => void }) {
     const { state, dispatch } = useApp();
+
     const [activeSection, setActiveSection] = useState<SectionId>("general");
     const [urlDraft, setUrlDraft] = useState(state.opencodeUrl);
     const [modelDraft, setModelDraft] = useState(state.assistantModel);
@@ -97,11 +98,11 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
 
     return (
         <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
             onClick={onClose}
         >
             <div
-                className="flex flex-col bg-surface border border-border-2 rounded-2xl shadow-2xl overflow-hidden"
+                className="flex flex-col bg-[#0d1117] border border-[#21262d] rounded-2xl shadow-2xl overflow-hidden"
                 style={{
                     width: "90%",
                     height: "90%",
@@ -112,25 +113,25 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
-                <div className="h-14 flex items-center justify-between px-6 border-b border-border flex-shrink-0">
+                <div className="h-14 flex items-center justify-between px-6 border-b border-[#21262d] flex-shrink-0">
                     <div className="flex items-center gap-3">
-                        <Settings size={18} className="text-accent" />
-                        <span className="text-sm font-semibold text-text">
+                        <Settings size={20} className="text-[#58a6ff]" />
+                        <span className="text-base font-semibold text-[#e6edf3]">
                             Settings
                         </span>
                     </div>
                     <button
                         onClick={onClose}
-                        className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
+                        className="w-9 h-9 flex items-center justify-center text-[#484f58] hover:text-[#c9d1d9] hover:bg-[#161b22] rounded-lg transition-colors"
                         title="Close"
                     >
-                        <X size={16} />
+                        <X size={18} />
                     </button>
                 </div>
 
                 <div className="flex flex-1 overflow-hidden">
-                    {/* Sidebar */}
-                    <nav className="w-48 flex-shrink-0 border-r border-border bg-surface overflow-y-auto py-2">
+                    {/* Sidebar navigation */}
+                    <nav className="w-52 flex-shrink-0 border-r border-[#21262d] bg-[#0d1117] overflow-y-auto py-2">
                         {SECTIONS.map((s) => {
                             const Icon = s.icon;
                             const isActive = activeSection === s.id;
@@ -138,16 +139,16 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                                 <button
                                     key={s.id}
                                     onClick={() => setActiveSection(s.id)}
-                                    className={`w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                                    className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm transition-colors ${
                                         isActive
-                                            ? "text-text bg-surface-2 border-l-2 border-accent"
-                                            : "text-text-2 hover:text-text hover:bg-surface-2/50 border-l-2 border-transparent"
+                                            ? "text-[#f0f6fc] bg-[#161b22] border-l-2 border-[#58a6ff]"
+                                            : "text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#161b22]/50 border-l-2 border-transparent"
                                     }`}
                                 >
                                     <Icon
-                                        size={15}
+                                        size={16}
                                         className={
-                                            isActive ? "text-accent" : ""
+                                            isActive ? "text-[#58a6ff]" : ""
                                         }
                                     />
                                     {s.label}
@@ -156,16 +157,17 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                         })}
                     </nav>
 
-                    {/* Content */}
+                    {/* Content area */}
                     <div className="flex-1 overflow-y-auto">
                         <div className="max-w-xl mx-auto px-8 py-6">
-                            <h2 className="text-base font-semibold text-text mb-1">
+                            {/* Section title */}
+                            <h2 className="text-lg font-semibold text-[#f0f6fc] mb-1">
                                 {
                                     SECTIONS.find((s) => s.id === activeSection)
                                         ?.label
                                 }
                             </h2>
-                            <p className="text-sm text-text-3 mb-6">
+                            <p className="text-sm text-[#484f58] mb-6">
                                 {activeSection === "general" &&
                                     "Global preferences that apply across all pages."}
                                 {activeSection === "ai" &&
@@ -257,7 +259,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                                                         )
                                                     }
                                                     disabled={modelsLoading}
-                                                    className="flex items-center gap-1.5 px-3 py-2 text-sm text-accent border border-border-2 rounded-lg hover:bg-surface-2 transition-colors disabled:opacity-50"
+                                                    className="flex items-center gap-1.5 px-3 py-2 text-sm text-[#58a6ff] border border-[#30363d] rounded-lg hover:bg-[#161b22] transition-colors disabled:opacity-50"
                                                 >
                                                     <RefreshCw
                                                         size={14}
@@ -266,7 +268,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                                                                 ? "animate-spin"
                                                                 : ""
                                                         }
-                                                    />{" "}
+                                                    />
                                                     Browse
                                                 </button>
                                             </div>
@@ -293,7 +295,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                                                         )
                                                     }
                                                     disabled={modelsLoading}
-                                                    className="flex items-center gap-1.5 px-3 py-2 text-sm text-accent border border-border-2 rounded-lg hover:bg-surface-2 transition-colors disabled:opacity-50"
+                                                    className="flex items-center gap-1.5 px-3 py-2 text-sm text-[#58a6ff] border border-[#30363d] rounded-lg hover:bg-[#161b22] transition-colors disabled:opacity-50"
                                                 >
                                                     <RefreshCw
                                                         size={14}
@@ -302,15 +304,15 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                                                                 ? "animate-spin"
                                                                 : ""
                                                         }
-                                                    />{" "}
+                                                    />
                                                     Browse
                                                 </button>
                                             </div>
                                         </SettingRow>
                                         {showModelDropdown &&
                                             models.length > 0 && (
-                                                <div className="max-h-48 overflow-y-auto bg-surface-2 border border-border-2 rounded-lg shadow-xl">
-                                                    <div className="px-3 py-1.5 text-xs text-text-3 uppercase tracking-wider border-b border-border sticky top-0 bg-surface-2">
+                                                <div className="max-h-48 overflow-y-auto bg-[#161b22] border border-[#30363d] rounded-lg shadow-xl">
+                                                    <div className="px-3 py-1.5 text-xs text-[#484f58] uppercase tracking-wider border-b border-[#21262d] sticky top-0 bg-[#161b22]">
                                                         Select for{" "}
                                                         {dropdownTarget ===
                                                         "assistant"
@@ -321,7 +323,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                                                         onClick={() =>
                                                             selectModel("")
                                                         }
-                                                        className="w-full text-left px-3 py-2 text-sm text-text-2 hover:bg-surface border-b border-border/50"
+                                                        className="w-full text-left px-3 py-2 text-sm text-[#8b949e] hover:bg-[#21262d] border-b border-[#21262d]/50"
                                                     >
                                                         Default (server picks)
                                                     </button>
@@ -333,12 +335,12 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                                                                     `${m.providerId}/${m.modelId}`,
                                                                 )
                                                             }
-                                                            className="w-full text-left px-3 py-2 text-sm text-text hover:bg-surface"
+                                                            className="w-full text-left px-3 py-2 text-sm text-[#c9d1d9] hover:bg-[#21262d]"
                                                         >
                                                             <div className="truncate">
                                                                 {m.label}
                                                             </div>
-                                                            <div className="text-xs text-text-3 truncate">
+                                                            <div className="text-xs text-[#484f58] truncate">
                                                                 {m.modelId}
                                                             </div>
                                                         </button>
@@ -347,7 +349,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                                             )}
                                         <button
                                             onClick={saveAI}
-                                            className="w-full py-2.5 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-colors"
+                                            className="w-full py-2.5 bg-[#238636] text-white text-sm font-semibold rounded-lg hover:bg-[#2ea043] transition-colors"
                                         >
                                             Save AI settings
                                         </button>
@@ -623,6 +625,8 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
     );
 }
 
+/* ── Reusable setting row components ─────────────────────────────────────── */
+
 function SettingRow({
     label,
     description,
@@ -633,11 +637,13 @@ function SettingRow({
     children: React.ReactNode;
 }) {
     return (
-        <div className="flex flex-col gap-1.5 pb-5 border-b border-border/50 last:border-b-0 last:pb-0">
-            <label className="text-sm font-medium text-text">{label}</label>
+        <div className="flex flex-col gap-1.5 pb-5 border-b border-[#21262d]/50 last:border-b-0 last:pb-0">
+            <label className="text-sm font-medium text-[#e6edf3]">
+                {label}
+            </label>
             {children}
             {description && (
-                <span className="text-xs text-text-3">{description}</span>
+                <span className="text-xs text-[#484f58]">{description}</span>
             )}
         </div>
     );
@@ -653,11 +659,11 @@ function SettingToggle({
     onChange: () => void;
 }) {
     return (
-        <div className="flex items-center justify-between pb-5 border-b border-border/50 last:border-b-0 last:pb-0">
-            <span className="text-sm font-medium text-text">{label}</span>
+        <div className="flex items-center justify-between pb-5 border-b border-[#21262d]/50 last:border-b-0 last:pb-0">
+            <span className="text-sm font-medium text-[#e6edf3]">{label}</span>
             <button
                 onClick={onChange}
-                className={`relative rounded-full transition-colors ${checked ? "bg-accent" : "bg-border-2"}`}
+                className={`relative rounded-full transition-colors ${checked ? "bg-[#58a6ff]" : "bg-[#30363d]"}`}
                 style={{ height: 22, width: 40 }}
             >
                 <div

@@ -67,7 +67,7 @@ export default function Navigation() {
 
     return (
         <>
-            <nav className="flex flex-col items-center py-4 gap-1.5 bg-surface/50 border-r border-border w-16 flex-shrink-0">
+            <nav className="flex flex-col items-center py-5 gap-3 bg-[#0d1117]/60 border-r border-[#21262d]/50 w-[72px] flex-shrink-0">
                 {state.pages.map((page) => {
                     const Icon = ICON_MAP[page.icon] ?? Globe;
                     const isActive = state.activePage === page.id;
@@ -91,20 +91,22 @@ export default function Navigation() {
                                 }
                             }}
                             title={`${page.label}  [${page.keybinding}]`}
-                            className={`relative w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
+                            className={`relative w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-200 ${
                                 isActive
-                                    ? "bg-accent/15 text-accent"
-                                    : "text-text-3 hover:text-text-2 hover:bg-surface-2/50"
+                                    ? "bg-[#58a6ff]/15 text-[#58a6ff]"
+                                    : "text-[#484f58] hover:text-[#8b949e] hover:bg-[#161b22]"
                             }`}
                         >
-                            <Icon size={20} />
+                            <Icon size={24} />
                             {isActive && (
-                                <div className="absolute left-0 top-2 bottom-2 w-[2px] bg-accent rounded-r-full" />
+                                <div className="absolute left-0 top-1.5 bottom-1.5 w-[2px] bg-[#58a6ff] rounded-r-full" />
                             )}
                         </button>
                     );
                 })}
+
                 <div className="flex-1" />
+
                 <button
                     onClick={() =>
                         setModal({
@@ -115,15 +117,16 @@ export default function Navigation() {
                         })
                     }
                     title="Add page"
-                    className="w-10 h-10 flex items-center justify-center text-text-3 hover:text-text-2 hover:bg-surface-2/50 rounded-xl transition-all duration-200"
+                    className="w-12 h-12 flex items-center justify-center text-[#30363d] hover:text-[#484f58] hover:bg-[#161b22] rounded-xl transition-all duration-200"
                 >
-                    <Plus size={18} strokeWidth={1.5} />
+                    <Plus size={22} strokeWidth={1.5} />
                 </button>
             </nav>
 
+            {/* Context menu for custom pages */}
             {contextMenu && (
                 <div
-                    className="fixed z-50 bg-surface border border-border-2 rounded-xl shadow-2xl py-1 min-w-[140px]"
+                    className="fixed z-50 bg-[#161b22] border border-[#21262d] rounded-xl shadow-2xl py-1.5 min-w-[140px]"
                     style={{
                         top: contextMenu.y,
                         left: contextMenu.x,
@@ -139,38 +142,39 @@ export default function Navigation() {
                             });
                             setContextMenu(null);
                         }}
-                        className="w-full text-left px-3 py-1.5 text-sm text-danger hover:bg-danger/10 rounded-lg transition-colors"
+                        className="w-full text-left px-3 py-1.5 text-sm text-[#f85149] hover:bg-[#4a0f0e] rounded-lg transition-colors"
                     >
                         Remove page
                     </button>
                 </div>
             )}
 
+            {/* Add page modal */}
             {modal.open && (
                 <div
-                    className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm"
+                    className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm"
                     onClick={() => setModal((m) => ({ ...m, open: false }))}
                     style={{ animation: "fadeIn 150ms ease-out" }}
                 >
                     <div
-                        className="bg-surface border border-border-2 rounded-2xl w-[380px] shadow-2xl"
+                        className="bg-[#0d1117] border border-[#21262d] rounded-2xl w-[380px] shadow-2xl"
                         onClick={(e) => e.stopPropagation()}
                         style={{
                             animation:
                                 "slideDown 200ms cubic-bezier(0.16,1,0.3,1)",
                         }}
                     >
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-                            <span className="text-sm font-semibold text-text">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-[#21262d]">
+                            <span className="text-base font-semibold text-[#e6edf3]">
                                 Add page
                             </span>
                             <button
                                 onClick={() =>
                                     setModal((m) => ({ ...m, open: false }))
                                 }
-                                className="w-7 h-7 flex items-center justify-center text-text-3 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
+                                className="w-7 h-7 flex items-center justify-center text-[#484f58] hover:text-[#e6edf3] hover:bg-[#21262d] rounded-lg transition-colors"
                             >
-                                <X size={14} />
+                                <X size={16} />
                             </button>
                         </div>
                         <div className="flex flex-col gap-3 p-5">
@@ -187,8 +191,8 @@ export default function Navigation() {
                                             }
                                             className={`flex-1 py-2 text-sm rounded-xl border font-medium transition-all duration-200 ${
                                                 modal.type === t
-                                                    ? "bg-accent/15 text-accent border-accent/30"
-                                                    : "text-text-3 border-border hover:border-border-2 hover:text-text-2"
+                                                    ? "bg-[#58a6ff]/15 text-[#58a6ff] border-[#58a6ff]/30"
+                                                    : "text-[#484f58] border-[#21262d] hover:border-[#30363d] hover:text-[#8b949e]"
                                             }`}
                                         >
                                             {t.charAt(0).toUpperCase() +
@@ -199,7 +203,7 @@ export default function Navigation() {
                             </div>
                             <input
                                 autoFocus
-                                className="w-full bg-bg border border-border-2 rounded-xl px-3.5 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
+                                className="w-full bg-[#161b22] border border-[#21262d] rounded-xl px-3.5 py-2.5 text-base text-[#e6edf3] outline-none focus:border-[#58a6ff]/50 placeholder:text-[#30363d] transition-colors"
                                 placeholder="Page label"
                                 value={modal.label}
                                 onChange={(e) =>
@@ -214,7 +218,7 @@ export default function Navigation() {
                             />
                             {modal.type === "custom" && (
                                 <input
-                                    className="w-full bg-bg border border-border-2 rounded-xl px-3.5 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
+                                    className="w-full bg-[#161b22] border border-[#21262d] rounded-xl px-3.5 py-2.5 text-base text-[#e6edf3] outline-none focus:border-[#58a6ff]/50 placeholder:text-[#30363d] transition-colors"
                                     placeholder="https://example.com"
                                     value={modal.url}
                                     onChange={(e) =>
@@ -231,7 +235,7 @@ export default function Navigation() {
                             <button
                                 onClick={addPage}
                                 disabled={!modal.label.trim()}
-                                className="w-full py-2.5 bg-accent text-white text-sm font-semibold rounded-xl hover:bg-accent-hover transition-colors disabled:opacity-40"
+                                className="w-full py-2.5 bg-[#238636] text-white text-base font-semibold rounded-xl hover:bg-[#2ea043] transition-colors disabled:opacity-40"
                             >
                                 Add page
                             </button>

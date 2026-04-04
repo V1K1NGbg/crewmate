@@ -44,7 +44,6 @@ export default function NotesPage() {
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [editing]);
-
     const contentRef = useRef(content);
     contentRef.current = content;
     const docIdRef = useRef<string | null>(null);
@@ -64,6 +63,7 @@ export default function NotesPage() {
             setDocId(initData.documentId);
             docIdRef.current = initData.documentId;
             setDocTitle(initData.title);
+
             const contentRes = await fetch(
                 `/api/docs/content?id=${encodeURIComponent(initData.documentId)}`,
             );
@@ -74,11 +74,11 @@ export default function NotesPage() {
                 );
             setContent(contentData.content ?? "");
         } catch (err: unknown) {
-            setInitError(
+            const msg =
                 err instanceof Error
                     ? err.message
-                    : "Failed to load Google Doc",
-            );
+                    : "Failed to load Google Doc";
+            setInitError(msg);
         } finally {
             setLoading(false);
         }
@@ -86,7 +86,9 @@ export default function NotesPage() {
 
     const refreshDoc = useCallback(async () => {
         const id = docIdRef.current;
-        if (!id || dirtyRef.current) return;
+        if (!id) return;
+        // Don't overwrite unsaved local changes
+        if (dirtyRef.current) return;
         try {
             const res = await fetch(
                 `/api/docs/content?id=${encodeURIComponent(id)}`,
@@ -95,7 +97,7 @@ export default function NotesPage() {
             const data = await res.json();
             setContent(data.content ?? "");
         } catch {
-            /* silent */
+            // silent refresh failure
         }
     }, []);
 
@@ -103,6 +105,7 @@ export default function NotesPage() {
         if (session?.accessToken) initDoc();
     }, [session?.accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Consume notePrefill — append to doc
     useEffect(() => {
         if (!state.notePrefill || !docId) return;
         const { title, content: prefillContent } = state.notePrefill;
@@ -114,6 +117,7 @@ export default function NotesPage() {
         notify("Content appended from prefill", "success");
     }, [state.notePrefill]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Auto-refresh
     useEffect(() => {
         const interval = state.pageSettings.general.autoRefreshInterval;
         if (!interval || !docIdRef.current) return;
@@ -158,10 +162,8 @@ export default function NotesPage() {
             const prompt = `Summarize the following note concisely in 2-4 sentences. Return ONLY the summary text, no preamble, no markdown headers.\n\n---\n${content.slice(0, 4000)}`;
             const summary = await opencodeChat(state.opencodeUrl, prompt);
             const timestamp = new Date().toLocaleString();
-            setContent(
-                (prev) =>
-                    `${prev}\n\n---\n\n### Summary\n\n> Generated on ${timestamp}\n\n${summary}\n`,
-            );
+            const appended = `${content}\n\n---\n\n### Summary\n\n> Generated on ${timestamp}\n\n${summary}\n`;
+            setContent(appended);
             setDirty(true);
             scheduleAutoSave();
             notify("Summary appended", "success");
@@ -192,18 +194,18 @@ export default function NotesPage() {
             !session?.accessToken ||
             initError?.toLowerCase().includes("unauthorized");
         return (
-            <div className="flex-1 flex flex-col items-center justify-center gap-6 bg-bg p-12">
-                <div className="flex flex-col items-center gap-5 p-8 bg-surface border border-border-2 rounded-2xl max-w-sm w-full">
-                    <div className="w-12 h-12 bg-surface-2 rounded-xl flex items-center justify-center">
-                        <FileText size={24} className="text-text-3" />
+            <div className="flex-1 flex flex-col items-center justify-center gap-6 bg-[#0d1117] p-12">
+                <div className="flex flex-col items-center gap-5 p-8 bg-[#161b22] border border-[#30363d] rounded-2xl max-w-sm w-full">
+                    <div className="w-14 h-14 bg-[#21262d] rounded-xl flex items-center justify-center">
+                        <FileText size={28} className="text-[#484f58]" />
                     </div>
                     <div className="flex flex-col items-center gap-2 text-center">
-                        <h2 className="text-base font-semibold text-text">
+                        <h2 className="text-lg font-semibold text-[#f0f6fc]">
                             {isUnauthorized
                                 ? "Re-authentication required"
                                 : "Could not load Notes"}
                         </h2>
-                        <p className="text-sm text-text-2 leading-relaxed">
+                        <p className="text-sm text-[#8b949e] leading-relaxed">
                             {isUnauthorized
                                 ? "Sign out and sign back in to grant access to Google Docs."
                                 : (initError ??
@@ -213,14 +215,14 @@ export default function NotesPage() {
                     {isUnauthorized ? (
                         <a
                             href="/api/auth/signout"
-                            className="w-full flex items-center justify-center px-4 py-2.5 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-all"
+                            className="w-full flex items-center justify-center px-4 py-2.5 bg-[#58a6ff] text-white text-sm font-semibold rounded-lg hover:bg-[#388bfd] transition-all"
                         >
                             Sign out &amp; re-authenticate
                         </a>
                     ) : (
                         <button
                             onClick={initDoc}
-                            className="w-full flex items-center justify-center px-4 py-2.5 bg-surface-2 border border-border-2 text-text text-sm font-medium rounded-lg hover:border-accent hover:text-accent transition-all"
+                            className="w-full flex items-center justify-center px-4 py-2.5 bg-[#21262d] border border-[#30363d] text-[#f0f6fc] text-sm font-medium rounded-lg hover:border-[#58a6ff] hover:text-[#58a6ff] transition-all"
                         >
                             Retry
                         </button>
@@ -232,9 +234,12 @@ export default function NotesPage() {
 
     if (loading) {
         return (
-            <div className="flex-1 flex items-center justify-center bg-bg">
-                <div className="flex items-center gap-3 text-text-2 text-sm">
-                    <Loader2 size={16} className="animate-spin text-accent" />{" "}
+            <div className="flex-1 flex items-center justify-center bg-[#0d1117]">
+                <div className="flex items-center gap-3 text-[#8b949e] text-sm">
+                    <Loader2
+                        size={18}
+                        className="animate-spin text-[#58a6ff]"
+                    />
                     Loading Google Doc…
                 </div>
             </div>
@@ -242,93 +247,95 @@ export default function NotesPage() {
     }
 
     return (
-        <div className="flex flex-1 flex-col overflow-hidden bg-bg">
+        <div className="flex flex-1 flex-col overflow-hidden bg-[#0d1117]">
             {/* Toolbar */}
-            <div className="flex items-center gap-3 px-6 py-3 border-b border-border bg-bg flex-shrink-0">
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-[#21262d] bg-[#0d1117] flex-shrink-0">
                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <FileText size={16} className="text-accent flex-shrink-0" />
-                    <span className="text-sm font-semibold text-text truncate">
+                    <FileText
+                        size={18}
+                        className="text-[#58a6ff] flex-shrink-0"
+                    />
+                    <span className="text-lg font-semibold text-[#f0f6fc] truncate">
                         {docTitle}
                     </span>
                     {dirty && (
-                        <span className="text-xs text-warning flex-shrink-0">
+                        <span className="text-xs text-[#d29922] flex-shrink-0">
                             (unsaved)
                         </span>
                     )}
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-2.5 flex-shrink-0">
                     <button
                         onClick={() => {
                             setEditing(!editing);
                             if (!editing)
                                 setTimeout(() => editorRef.current?.focus(), 0);
                         }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg transition-all ${
-                            editing
-                                ? "text-accent bg-accent/15 border-accent"
-                                : "text-text-2 border-border-2 hover:border-accent hover:text-accent"
-                        }`}
+                        className={`flex items-center gap-1.5 px-4 py-2 text-sm border rounded-lg transition-all ${editing ? "text-[#58a6ff] bg-[#1f4a7a] border-[#58a6ff]" : "text-[#8b949e] border-[#30363d] hover:border-[#58a6ff] hover:text-[#58a6ff] hover:bg-[#58a6ff]/5"}`}
                         title={editing ? "Switch to preview" : "Switch to edit"}
                     >
-                        <Pencil size={13} /> {editing ? "Editing" : "Edit"}
+                        <Pencil size={14} />
+                        {editing ? "Editing" : "Edit"}
                     </button>
                     {docId && (
                         <a
                             href={`https://docs.google.com/document/d/${docId}/edit`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-text-2 border border-border-2 rounded-lg hover:border-accent hover:text-accent transition-all"
+                            className="flex items-center gap-1.5 px-4 py-2 text-sm text-[#8b949e] border border-[#30363d] rounded-lg hover:border-[#58a6ff] hover:text-[#58a6ff] hover:bg-[#58a6ff]/5 transition-all"
                             title="Open in Google Docs"
                         >
-                            <ExternalLink size={13} /> Open in Docs
+                            <ExternalLink size={14} />
+                            Open in Docs
                         </a>
                     )}
                     <button
                         onClick={handleAddToCalendar}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-text-2 border border-border-2 rounded-lg hover:border-success hover:text-success transition-all"
+                        className="flex items-center gap-1.5 px-4 py-2 text-sm text-[#8b949e] border border-[#30363d] rounded-lg hover:border-[#7ee787] hover:text-[#7ee787] hover:bg-[#7ee787]/5 transition-all"
                         title="Create calendar event from notes"
                     >
-                        <CalendarPlus size={13} /> Calendar
+                        <CalendarPlus size={14} />
+                        Calendar
                     </button>
                     <button
                         onClick={handleAISummarize}
                         disabled={summarizing}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-text-2 border border-border-2 rounded-lg hover:border-accent hover:text-accent transition-all disabled:opacity-50"
+                        className="flex items-center gap-1.5 px-4 py-2 text-sm text-[#8b949e] border border-[#30363d] rounded-lg hover:border-[#58a6ff] hover:text-[#58a6ff] hover:bg-[#58a6ff]/5 transition-all disabled:opacity-50"
                     >
                         {summarizing ? (
                             <Loader2 size={12} className="animate-spin" />
                         ) : (
                             <Sparkles size={12} />
-                        )}{" "}
+                        )}
                         Summarize
                     </button>
                     <button
                         onClick={refreshDoc}
-                        className="w-8 h-8 flex items-center justify-center text-text-2 border border-border-2 rounded-lg hover:border-accent hover:text-accent transition-all"
+                        className="w-9 h-9 flex items-center justify-center text-[#8b949e] border border-[#30363d] rounded-lg hover:border-[#58a6ff] hover:text-[#58a6ff] hover:bg-[#58a6ff]/5 transition-all"
                         title="Refresh from Google Docs"
                     >
-                        <RefreshCw size={13} />
+                        <RefreshCw size={14} />
                     </button>
                     <button
                         onClick={saveDoc}
                         disabled={saving}
-                        className="w-8 h-8 flex items-center justify-center text-text-2 border border-border-2 rounded-lg hover:border-success hover:text-success transition-all disabled:opacity-50"
+                        className="w-9 h-9 flex items-center justify-center text-[#8b949e] border border-[#30363d] rounded-lg hover:border-[#7ee787] hover:text-[#7ee787] hover:bg-[#7ee787]/5 transition-all disabled:opacity-50"
                         title="Save now"
                     >
                         {saving ? (
-                            <Loader2 size={13} className="animate-spin" />
+                            <Loader2 size={14} className="animate-spin" />
                         ) : (
-                            <Save size={13} />
+                            <Save size={14} />
                         )}
                     </button>
                 </div>
             </div>
 
-            {/* Editor / Preview */}
+            {/* Unified Editor / Preview */}
             {editing ? (
                 <textarea
                     ref={editorRef}
-                    className="flex-1 resize-none px-10 py-8 font-mono leading-[1.9] text-text bg-bg outline-none placeholder:text-text-3"
+                    className="flex-1 resize-none px-10 py-8 font-mono leading-[1.9] text-[#e6edf3] bg-[#0d1117] outline-none placeholder:text-[#484f58]"
                     style={{
                         fontSize: `${state.pageSettings.notes.fontSize ?? 15}px`,
                     }}
@@ -357,7 +364,7 @@ export default function NotesPage() {
                             {content}
                         </ReactMarkdown>
                     ) : (
-                        <p className="text-text-3 italic">
+                        <p className="text-[#484f58] italic">
                             Click to start writing… your notes are saved to
                             Google Docs.
                         </p>

@@ -24,6 +24,7 @@ function buildPageContext(state: ReturnType<typeof useApp>["state"]): string {
         `Total pages: ${state.pages.map((p) => p.label).join(", ")}`,
     ];
 
+    // Gmail threads
     if (state.gmailThreads.length > 0) {
         lines.push(`\n--- Emails (${state.gmailThreads.length}) ---`);
         for (const t of state.gmailThreads.slice(0, 15)) {
@@ -37,6 +38,7 @@ function buildPageContext(state: ReturnType<typeof useApp>["state"]): string {
             lines.push(`  …and ${state.gmailThreads.length - 15} more`);
     }
 
+    // Calendar events
     if (state.calendarEvents.length > 0) {
         lines.push(
             `\n--- Calendar Events (${state.calendarEvents.length}) ---`,
@@ -51,6 +53,7 @@ function buildPageContext(state: ReturnType<typeof useApp>["state"]): string {
             lines.push(`  …and ${state.calendarEvents.length - 15} more`);
     }
 
+    // Notes — include titles and content snippets
     if (state.notes.length > 0) {
         lines.push(`\n--- Notes (${state.notes.length}) ---`);
         for (const n of state.notes.slice(0, 10)) {
@@ -63,6 +66,7 @@ function buildPageContext(state: ReturnType<typeof useApp>["state"]): string {
             lines.push(`  …and ${state.notes.length - 10} more`);
     }
 
+    // Tasks — include full details with subtasks
     if (state.tasks.length > 0) {
         const pending = state.tasks.filter((t) => t.status !== "done").length;
         lines.push(
@@ -88,12 +92,15 @@ export default function AIAssistant() {
     const { state, dispatch, notify } = useApp();
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [state.assistantMessages]);
+
+    // Do NOT autofocus the input
 
     const sendMessage = useCallback(async () => {
         const text = input.trim();
@@ -117,6 +124,7 @@ export default function AIAssistant() {
                 fullPrompt,
                 state.assistantModel || undefined,
             );
+
             const assistantMsg: AssistantMessage = {
                 id: crypto.randomUUID(),
                 role: "assistant",
@@ -141,13 +149,13 @@ export default function AIAssistant() {
 
     return (
         <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
             onClick={() =>
                 dispatch({ type: "SET_OPENCODE_OVERLAY_OPEN", open: false })
             }
         >
             <div
-                className="flex flex-col bg-surface border border-border-2 rounded-2xl shadow-2xl overflow-hidden"
+                className="flex flex-col bg-[#0d1117] border border-[#21262d] rounded-2xl shadow-2xl overflow-hidden"
                 style={{
                     width: "90%",
                     height: "90%",
@@ -158,14 +166,14 @@ export default function AIAssistant() {
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
-                <div className="h-14 flex items-center justify-between px-6 border-b border-border flex-shrink-0">
+                <div className="h-14 flex items-center justify-between px-6 border-b border-[#21262d] flex-shrink-0">
                     <div className="flex items-center gap-3">
-                        <Bot size={18} className="text-accent" />
-                        <span className="text-sm font-semibold text-text">
+                        <Bot size={20} className="text-[#58a6ff]" />
+                        <span className="text-base font-semibold text-[#e6edf3]">
                             AI Assistant
                         </span>
                     </div>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1.5">
                         <button
                             onClick={async () => {
                                 const url = await detectOpencodeServer(
@@ -176,19 +184,19 @@ export default function AIAssistant() {
                                     available: !!url,
                                 });
                             }}
-                            className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
-                            title="Reconnect"
+                            className="w-9 h-9 flex items-center justify-center text-[#484f58] hover:text-[#c9d1d9] hover:bg-[#161b22] rounded-lg transition-colors"
+                            title="Reconnect to server"
                         >
-                            <RefreshCw size={16} />
+                            <RefreshCw size={18} />
                         </button>
                         <button
                             onClick={() =>
                                 dispatch({ type: "CLEAR_ASSISTANT_MESSAGES" })
                             }
-                            className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
+                            className="w-9 h-9 flex items-center justify-center text-[#484f58] hover:text-[#c9d1d9] hover:bg-[#161b22] rounded-lg transition-colors"
                             title="Clear chat"
                         >
-                            <Trash2 size={16} />
+                            <Trash2 size={18} />
                         </button>
                         <button
                             onClick={() =>
@@ -197,10 +205,10 @@ export default function AIAssistant() {
                                     open: false,
                                 })
                             }
-                            className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
+                            className="w-9 h-9 flex items-center justify-center text-[#484f58] hover:text-[#c9d1d9] hover:bg-[#161b22] rounded-lg transition-colors"
                             title="Close (Esc)"
                         >
-                            <X size={16} />
+                            <X size={18} />
                         </button>
                     </div>
                 </div>
@@ -208,16 +216,16 @@ export default function AIAssistant() {
                 {/* Messages */}
                 {!state.opencodeAvailable ? (
                     <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
-                        <div className="w-14 h-14 rounded-2xl bg-surface-2 border border-border flex items-center justify-center">
-                            <AlertCircle size={28} className="text-warning" />
+                        <div className="w-14 h-14 rounded-2xl bg-[#161b22] border border-[#21262d] flex items-center justify-center">
+                            <AlertCircle size={32} className="text-[#d29922]" />
                         </div>
                         <div>
-                            <p className="text-sm font-semibold text-text mb-1">
+                            <p className="text-base font-semibold text-[#e6edf3] mb-1">
                                 opencode not detected
                             </p>
-                            <p className="text-sm text-text-2 leading-relaxed">
+                            <p className="text-base text-[#8b949e] leading-relaxed">
                                 Run{" "}
-                                <code className="bg-surface-2 border border-border-2 px-1.5 py-0.5 rounded text-xs font-mono text-accent">
+                                <code className="bg-[#161b22] border border-[#30363d] px-1.5 py-0.5 rounded text-sm font-mono text-[#79c0ff]">
                                     opencode web --port 4096
                                 </code>{" "}
                                 in your project directory
@@ -225,14 +233,14 @@ export default function AIAssistant() {
                         </div>
                     </div>
                 ) : (
-                    <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+                    <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
                         {state.assistantMessages.length === 0 && (
-                            <div className="flex flex-col items-center justify-center h-full text-center gap-3 opacity-50">
-                                <Bot size={36} className="text-border-2" />
-                                <p className="text-sm text-text-3">
+                            <div className="flex flex-col items-center justify-center h-full text-center gap-3.5 opacity-60">
+                                <Bot size={40} className="text-[#30363d]" />
+                                <p className="text-base text-[#484f58]">
                                     Ask me anything about your workflow
                                 </p>
-                                <p className="text-xs text-text-3">
+                                <p className="text-base text-[#30363d]">
                                     I can see your current page, notes, and
                                     tasks
                                 </p>
@@ -244,18 +252,18 @@ export default function AIAssistant() {
                                 className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                             >
                                 {msg.role === "assistant" && (
-                                    <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                    <div className="w-8 h-8 rounded-lg bg-[#1f4a7a] flex items-center justify-center flex-shrink-0 mt-0.5">
                                         <Bot
-                                            size={14}
-                                            className="text-accent"
+                                            size={16}
+                                            className="text-[#58a6ff]"
                                         />
                                     </div>
                                 )}
                                 <div
-                                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                                    className={`max-w-[85%] rounded-2xl px-5 py-3 text-base leading-relaxed ${
                                         msg.role === "user"
-                                            ? "bg-accent text-white rounded-br-md whitespace-pre-wrap"
-                                            : "bg-surface-2 text-text border border-border rounded-bl-md"
+                                            ? "bg-[#1f6feb] text-white rounded-br-md whitespace-pre-wrap"
+                                            : "bg-[#161b22] text-[#e6edf3] border border-[#21262d] rounded-bl-md"
                                     }`}
                                 >
                                     {msg.role === "assistant" ? (
@@ -271,10 +279,10 @@ export default function AIAssistant() {
                                     )}
                                 </div>
                                 {msg.role === "user" && (
-                                    <div className="w-7 h-7 rounded-lg bg-surface-2 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                    <div className="w-8 h-8 rounded-lg bg-[#21262d] flex items-center justify-center flex-shrink-0 mt-0.5">
                                         <User
-                                            size={14}
-                                            className="text-text-2"
+                                            size={16}
+                                            className="text-[#8b949e]"
                                         />
                                     </div>
                                 )}
@@ -282,13 +290,13 @@ export default function AIAssistant() {
                         ))}
                         {loading && (
                             <div className="flex gap-3 items-start">
-                                <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center flex-shrink-0">
-                                    <Bot size={14} className="text-accent" />
+                                <div className="w-8 h-8 rounded-lg bg-[#1f4a7a] flex items-center justify-center flex-shrink-0">
+                                    <Bot size={16} className="text-[#58a6ff]" />
                                 </div>
-                                <div className="bg-surface-2 border border-border rounded-2xl rounded-bl-md px-4 py-3">
+                                <div className="bg-[#161b22] border border-[#21262d] rounded-2xl rounded-bl-md px-5 py-3.5">
                                     <Loader2
-                                        size={16}
-                                        className="animate-spin text-accent"
+                                        size={18}
+                                        className="animate-spin text-[#58a6ff]"
                                     />
                                 </div>
                             </div>
@@ -299,8 +307,8 @@ export default function AIAssistant() {
 
                 {/* Input */}
                 {state.opencodeAvailable && (
-                    <div className="p-4 border-t border-border">
-                        <div className="flex gap-2 items-end">
+                    <div className="p-5 border-t border-[#21262d]">
+                        <div className="flex gap-2.5 items-end">
                             <textarea
                                 ref={inputRef}
                                 value={input}
@@ -313,20 +321,20 @@ export default function AIAssistant() {
                                 }}
                                 placeholder="Ask anything…"
                                 rows={1}
-                                className="flex-1 bg-surface-2 border border-border-2 rounded-xl px-4 py-3 text-sm text-text outline-none focus:border-accent transition-colors resize-none placeholder:text-text-3"
+                                className="flex-1 bg-[#161b22] border border-[#30363d] rounded-xl px-5 py-3.5 text-base text-[#e6edf3] outline-none focus:border-[#58a6ff] transition-colors resize-none placeholder:text-[#484f58]"
                                 style={{
                                     maxHeight: 130,
                                     height: "auto",
-                                    minHeight: 44,
+                                    minHeight: 48,
                                 }}
                                 disabled={loading}
                             />
                             <button
                                 onClick={sendMessage}
                                 disabled={loading || !input.trim()}
-                                className="w-10 h-10 flex items-center justify-center bg-accent text-white rounded-xl hover:bg-accent-hover disabled:opacity-40 transition-colors flex-shrink-0"
+                                className="w-11 h-11 flex items-center justify-center bg-[#1f6feb] text-white rounded-xl hover:bg-[#388bfd] disabled:opacity-40 disabled:hover:bg-[#1f6feb] transition-colors flex-shrink-0"
                             >
-                                <Send size={16} />
+                                <Send size={18} />
                             </button>
                         </div>
                     </div>
