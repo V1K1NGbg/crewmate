@@ -652,50 +652,61 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
             </button>
           </div>
 
-          {/* Filter pills */}
-          <div className="flex gap-1.5 px-4 py-2.5 border-b border-border">
-            {["in:inbox", "is:unread", "is:starred", "in:sent"].map((q) => (
-              <button
-                key={q}
-                onClick={() => {
-                  setQuery(q);
-                  setSearchInput("");
-                  setSelected(new Set());
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
-                  query === q || (!query && q === "in:inbox")
-                    ? "bg-accent/15 text-accent"
-                    : "text-text-2 hover:text-text hover:bg-surface-2"
-                }`}
-              >
-                {q.replace("in:", "").replace("is:", "")}
-              </button>
-            ))}
+          {/* Filter tabs — selected highlighted, unselected shown as muted options */}
+          <div className="flex items-center px-4 py-2.5 border-b border-border">
+            <div className="flex w-full border border-border-2 rounded-lg overflow-hidden">
+              {["in:inbox", "is:unread", "is:starred", "in:sent"].map((q) => {
+                const isActive = query === q || (!query && q === "in:inbox");
+                const label = q.replace("in:", "").replace("is:", "");
+                return (
+                  <button
+                    key={q}
+                    onClick={() => {
+                      setQuery(q);
+                      setSearchInput("");
+                      setSelected(new Set());
+                    }}
+                    style={{ padding: "4px 8px", minWidth: 0 }}
+                    className={`flex-1 text-sm font-medium whitespace-nowrap transition-all ${
+                      isActive
+                        ? "bg-accent/15 text-accent"
+                        : "text-text-3 hover:text-text-2 hover:bg-surface-2/50"
+                    } ${q !== "in:sent" ? "border-r border-border-2" : ""}`}
+                  >
+                    <span style={{ display: "block", width: "100%" }}>
+                      {label.charAt(0).toUpperCase() + label.slice(1)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Bulk actions */}
           {selected.size > 0 && (
             <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-surface">
-              <span className="text-xs text-text-2 flex-1">
+              <span className="text-sm text-text-2 flex-1">
                 {selected.size} selected
               </span>
               <button
                 onClick={bulkArchive}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-text-2 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
+                style={{ padding: "4px 12px" }}
+                className="flex items-center gap-1.5 text-sm text-text-2 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
               >
-                <Archive size={12} /> Archive
+                <Archive size={14} /> Archive
               </button>
               <button
                 onClick={bulkTrash}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-text-2 hover:text-danger hover:bg-surface-2 rounded-lg transition-colors"
+                style={{ padding: "4px 12px" }}
+                className="flex items-center gap-1.5 text-sm text-text-2 hover:text-danger hover:bg-surface-2 rounded-lg transition-colors"
               >
-                <Trash2 size={12} /> Trash
+                <Trash2 size={14} /> Trash
               </button>
               <button
                 onClick={() => setSelected(new Set())}
-                className="text-text-3 hover:text-text-2 p-1 rounded-lg hover:bg-surface-2 transition-colors"
+                className="text-text-3 hover:text-text-2 p-1.5 rounded-lg hover:bg-surface-2 transition-colors"
               >
-                <X size={12} />
+                <X size={14} />
               </button>
             </div>
           )}
@@ -703,11 +714,11 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
           {/* Select all */}
           {gmail.threads.length > 0 && (
             <div
-              className="flex items-center gap-3 px-4 py-2 border-b border-border cursor-pointer hover:bg-surface transition-colors"
+              className="flex items-center gap-3 px-4 py-2.5 border-b border-border cursor-pointer hover:bg-surface transition-colors"
               onClick={toggleSelectAll}
             >
               <div
-                className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-all ${
+                className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${
                   selected.size === gmail.threads.length &&
                   gmail.threads.length > 0
                     ? "bg-accent border-accent"
@@ -719,31 +730,32 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                 {(selected.size === gmail.threads.length ||
                   selected.size > 0) && (
                   <svg
-                    width="8"
-                    height="8"
-                    viewBox="0 0 8 8"
+                    width="10"
+                    height="10"
+                    viewBox="0 0 10 10"
                     fill="none"
                     className="text-white"
                   >
                     {selected.size === gmail.threads.length ? (
                       <path
-                        d="M1 4l2 2 4-4"
+                        d="M2 5l2.5 2.5 5-5"
                         stroke="currentColor"
-                        strokeWidth="1.5"
+                        strokeWidth="2"
                         strokeLinecap="round"
+                        strokeLinejoin="round"
                       />
                     ) : (
                       <path
-                        d="M1 4h6"
+                        d="M2 5h6"
                         stroke="currentColor"
-                        strokeWidth="1.5"
+                        strokeWidth="2"
                         strokeLinecap="round"
                       />
                     )}
                   </svg>
                 )}
               </div>
-              <span className="text-xs text-text-3">Select all</span>
+              <span className="text-sm text-text-2">Select all</span>
             </div>
           )}
 
@@ -770,39 +782,56 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                   <div className="flex items-start gap-3">
                     <div
                       onClick={(e) => toggleSelect(t.id, e)}
-                      className={`mt-0.5 w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center cursor-pointer transition-all ${
+                      className={`mt-0.5 w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                         selected.has(t.id)
                           ? "bg-accent border-accent"
-                          : "border-text-3 opacity-0 group-hover:opacity-100"
+                          : "border-border-2 opacity-60 group-hover:opacity-100"
                       }`}
                     >
                       {selected.has(t.id) && (
                         <svg
-                          width="8"
-                          height="8"
-                          viewBox="0 0 8 8"
+                          width="10"
+                          height="10"
+                          viewBox="0 0 10 10"
                           fill="none"
                           className="text-white"
                         >
                           <path
-                            d="M1 4l2 2 4-4"
+                            d="M2 5l2.5 2.5 5-5"
                             stroke="currentColor"
-                            strokeWidth="1.5"
+                            strokeWidth="2"
                             strokeLinecap="round"
+                            strokeLinejoin="round"
                           />
                         </svg>
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                      <div className="flex items-baseline justify-between gap-2 mb-0.5 pr-16">
                         <span
                           className={`text-sm truncate ${t.unread ? "font-semibold text-text" : "font-medium text-text-2"}`}
                         >
                           {extractName(t.from)}
                         </span>
-                        <span className="text-xs text-text-3 flex-shrink-0 pr-8">
-                          {formatDate(t.date)}
-                        </span>
+                        <div className="flex items-center gap-1 flex-shrink-0 absolute right-2">
+                          <span className="text-xs text-text-3">
+                            {formatDate(t.date)}
+                          </span>
+                          <button
+                            onClick={(e) => handleArchive(t.id, e)}
+                            className="p-1.5 text-text-3 hover:text-success hover:bg-success/10 rounded transition-colors opacity-0 group-hover:opacity-100"
+                            title="Archive"
+                          >
+                            <Archive size={16} />
+                          </button>
+                          <button
+                            onClick={(e) => handleTrash(t.id, e)}
+                            className="p-1.5 text-text-3 hover:text-danger hover:bg-danger/10 rounded transition-colors opacity-0 group-hover:opacity-100"
+                            title="Trash"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </div>
                       <div
                         className={`text-sm truncate mb-0.5 ${t.unread ? "font-medium text-text" : "text-text-2"}`}
@@ -818,22 +847,6 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                         </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="absolute right-2 top-2.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-surface border border-border-2 rounded-lg p-0.5 shadow-sm">
-                    <button
-                      onClick={(e) => handleArchive(t.id, e)}
-                      className="p-1 text-text-3 hover:text-text-2 hover:bg-surface-2 rounded transition-colors"
-                      title="Archive"
-                    >
-                      <Archive size={13} />
-                    </button>
-                    <button
-                      onClick={(e) => handleTrash(t.id, e)}
-                      className="p-1 text-text-3 hover:text-danger hover:bg-surface-2 rounded transition-colors"
-                      title="Trash"
-                    >
-                      <Trash2 size={13} />
-                    </button>
                   </div>
                 </div>
               ))
@@ -893,13 +906,15 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button
                     onClick={() => handleArchive(activeThread.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:border-success hover:text-success transition-all"
+                    style={{ padding: "2px 12px" }}
+                    className="flex items-center gap-1.5 text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:border-success hover:text-success transition-all"
                   >
                     <Archive size={14} /> Archive
                   </button>
                   <button
                     onClick={() => openReply(messages[messages.length - 1])}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-all"
+                    style={{ padding: "2px 12px" }}
+                    className="flex items-center gap-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-all"
                   >
                     <Reply size={14} /> Reply
                   </button>
@@ -1203,7 +1218,8 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
             <button
               onClick={handleSend}
               disabled={sending}
-              className="flex items-center justify-center gap-2 w-full py-2.5 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-all disabled:opacity-50"
+              style={{ padding: "2px 12px" }}
+              className="flex items-center justify-center gap-2 w-full text-sm font-semibold text-white bg-accent rounded-lg hover:bg-accent-hover transition-all disabled:opacity-50"
             >
               {sending ? (
                 <Loader2 size={14} className="animate-spin" />

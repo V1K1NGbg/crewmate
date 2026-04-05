@@ -10,12 +10,14 @@ import {
   CheckSquare,
   Bot,
   RefreshCw,
-  ChevronDown,
   Palette,
+  Check,
+  ChevronDown,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { fetchOpencodeModels } from "@/lib/opencode";
 import { COLOR_SCHEMES } from "@/types";
+import type { GoogleCalendarList } from "@/types";
 
 interface ModelOption {
   providerId: string;
@@ -24,7 +26,7 @@ interface ModelOption {
 }
 
 const SECTIONS = [
-  { id: "general", label: "General", icon: RefreshCw },
+  { id: "general", label: "General", icon: Palette },
   { id: "ai", label: "AI Assistant", icon: Bot },
   { id: "gmail", label: "Gmail", icon: Mail },
   { id: "calendar", label: "Calendar", icon: Calendar },
@@ -35,8 +37,10 @@ const SECTIONS = [
 type SectionId = (typeof SECTIONS)[number]["id"];
 
 export default function SettingsPanel({ onClose }: { onClose: () => void }) {
-  const { state, dispatch } = useApp();
+  const { state, dispatch, notify } = useApp();
   const [activeSection, setActiveSection] = useState<SectionId>("general");
+
+  // AI state
   const [urlDraft, setUrlDraft] = useState(state.opencodeUrl);
   const [modelDraft, setModelDraft] = useState(state.assistantModel);
   const [suggestionModelDraft, setSuggestionModelDraft] = useState(
@@ -44,10 +48,12 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   );
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
-  const [showModelDropdown, setShowModelDropdown] = useState(false);
-  const [dropdownTarget, setDropdownTarget] = useState<
-    "assistant" | "suggestion"
-  >("assistant");
+  const [showAssistantDropdown, setShowAssistantDropdown] = useState(false);
+  const [showSuggestionDropdown, setShowSuggestionDropdown] = useState(false);
+
+  // Calendar list state
+  const [calendarList, setCalendarList] = useState<GoogleCalendarList[]>([]);
+  const [calendarListLoading, setCalendarListLoading] = useState(false);
 
   useEffect(() => {
     setUrlDraft(state.opencodeUrl);
@@ -58,6 +64,27 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
     state.assistantModel,
     state.pageSettings.gmail.suggestionModel,
   ]);
+
+  // Load calendar list when calendar tab is opened
+  useEffect(() => {
+    if (activeSection === "calendar" && calendarList.length === 0) {
+      loadCalendarList();
+    }
+  }, [activeSection]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function loadCalendarList() {
+    setCalendarListLoading(true);
+    try {
+      const res = await fetch("/api/calendar/lists");
+      if (!res.ok) return;
+      const data = await res.json();
+      setCalendarList(data.calendars ?? []);
+    } catch {
+      /* ignore */
+    } finally {
+      setCalendarListLoading(false);
+    }
+  }
 
   async function loadModels() {
     setModelsLoading(true);
@@ -79,22 +106,21 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
       key: "gmail",
       settings: { suggestionModel: suggestionModelDraft },
     });
-    setShowModelDropdown(false);
+    setShowAssistantDropdown(false);
+    setShowSuggestionDropdown(false);
+    notify("AI settings saved", "success");
   }
 
-  function openDropdown(target: "assistant" | "suggestion") {
-    setDropdownTarget(target);
-    if (models.length > 0) {
-      setShowModelDropdown(true);
-    } else {
-      loadModels().then(() => setShowModelDropdown(true));
-    }
-  }
-
-  function selectModel(value: string) {
-    if (dropdownTarget === "assistant") setModelDraft(value);
-    else setSuggestionModelDraft(value);
-    setShowModelDropdown(false);
+  function toggleCalendarId(id: string) {
+    const current = state.pageSettings.calendar.enabledCalendarIds ?? [];
+    const next = current.includes(id)
+      ? current.filter((x) => x !== id)
+      : [...current, id];
+    dispatch({
+      type: "UPDATE_PAGE_SETTINGS",
+      key: "calendar",
+      settings: { enabledCalendarIds: next },
+    });
   }
 
   return (
@@ -129,8 +155,8 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar */}
-          <nav className="w-48 flex-shrink-0 border-r border-border bg-surface overflow-y-auto py-2">
+          {/* Sidebar — wider tabs */}
+          <nav className="w-60 flex-shrink-0 border-r border-border bg-surface overflow-y-auto py-4">
             {SECTIONS.map((s) => {
               const Icon = s.icon;
               const isActive = activeSection === s.id;
@@ -138,13 +164,13 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                 <button
                   key={s.id}
                   onClick={() => setActiveSection(s.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                  className={`w-full flex items-center gap-3 px-5 py-3.5 text-sm font-medium transition-colors ${
                     isActive
                       ? "text-text bg-surface-2 border-l-2 border-accent"
                       : "text-text-2 hover:text-text hover:bg-surface-2/50 border-l-2 border-transparent"
                   }`}
                 >
-                  <Icon size={15} className={isActive ? "text-accent" : ""} />
+                  <Icon size={18} className={isActive ? "text-accent" : ""} />
                   {s.label}
                 </button>
               );
@@ -165,7 +191,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                 {activeSection === "gmail" &&
                   "Customize how Gmail threads are loaded and displayed."}
                 {activeSection === "calendar" &&
-                  "Calendar display and timezone settings."}
+                  "Calendar display, timezone, and Google Calendar selection."}
                 {activeSection === "notes" &&
                   "Editor appearance and auto-save behavior."}
                 {activeSection === "tasks" &&
@@ -264,89 +290,100 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                         placeholder="http://localhost:4096"
                       />
                     </SettingRow>
-                    <SettingRow label="Assistant model">
+
+                    {/* Assistant model picker */}
+                    <SettingRow
+                      label="Assistant model"
+                      description="Model used in the AI chat assistant"
+                    >
                       <div className="flex gap-2">
                         <input
                           className="settings-input flex-1"
                           value={modelDraft}
                           onChange={(e) => {
                             setModelDraft(e.target.value);
-                            setShowModelDropdown(false);
+                            setShowAssistantDropdown(false);
                           }}
                           placeholder="Default (server picks)"
                         />
                         <button
-                          onClick={() => openDropdown("assistant")}
+                          onClick={async () => {
+                            if (models.length === 0) await loadModels();
+                            setShowAssistantDropdown((v) => !v);
+                            setShowSuggestionDropdown(false);
+                          }}
                           disabled={modelsLoading}
-                          className="flex items-center gap-1.5 px-3 py-2 text-sm text-accent border border-border-2 rounded-lg hover:bg-surface-2 transition-colors disabled:opacity-50"
+                          className="flex items-center gap-1.5 text-sm text-accent border border-border-2 rounded-lg hover:bg-surface-2 transition-colors disabled:opacity-50 px-3"
                         >
-                          <RefreshCw
+                          <ChevronDown
                             size={14}
                             className={modelsLoading ? "animate-spin" : ""}
                           />{" "}
                           Browse
                         </button>
                       </div>
+                      {showAssistantDropdown && models.length > 0 && (
+                        <ModelDropdown
+                          models={models}
+                          currentValue={modelDraft}
+                          label="assistant"
+                          onSelect={(v) => {
+                            setModelDraft(v);
+                            setShowAssistantDropdown(false);
+                          }}
+                        />
+                      )}
                     </SettingRow>
-                    <SettingRow label="Suggestion model (Gmail)">
+
+                    {/* Suggestion model picker */}
+                    <SettingRow
+                      label="Suggestion model (Gmail)"
+                      description="Model used for email action suggestions"
+                    >
                       <div className="flex gap-2">
                         <input
                           className="settings-input flex-1"
                           value={suggestionModelDraft}
                           onChange={(e) => {
                             setSuggestionModelDraft(e.target.value);
-                            setShowModelDropdown(false);
+                            setShowSuggestionDropdown(false);
                           }}
                           placeholder="Same as assistant"
                         />
                         <button
-                          onClick={() => openDropdown("suggestion")}
+                          onClick={async () => {
+                            if (models.length === 0) await loadModels();
+                            setShowSuggestionDropdown((v) => !v);
+                            setShowAssistantDropdown(false);
+                          }}
                           disabled={modelsLoading}
-                          className="flex items-center gap-1.5 px-3 py-2 text-sm text-accent border border-border-2 rounded-lg hover:bg-surface-2 transition-colors disabled:opacity-50"
+                          className="flex items-center gap-1.5 text-sm text-accent border border-border-2 rounded-lg hover:bg-surface-2 transition-colors disabled:opacity-50 px-3"
                         >
-                          <RefreshCw
+                          <ChevronDown
                             size={14}
                             className={modelsLoading ? "animate-spin" : ""}
                           />{" "}
                           Browse
                         </button>
                       </div>
+                      {showSuggestionDropdown && models.length > 0 && (
+                        <ModelDropdown
+                          models={models}
+                          currentValue={suggestionModelDraft}
+                          label="suggestions"
+                          onSelect={(v) => {
+                            setSuggestionModelDraft(v);
+                            setShowSuggestionDropdown(false);
+                          }}
+                        />
+                      )}
                     </SettingRow>
-                    {showModelDropdown && models.length > 0 && (
-                      <div className="max-h-48 overflow-y-auto bg-surface-2 border border-border-2 rounded-lg shadow-xl">
-                        <div className="px-3 py-1.5 text-xs text-text-3 uppercase tracking-wider border-b border-border sticky top-0 bg-surface-2">
-                          Select for{" "}
-                          {dropdownTarget === "assistant"
-                            ? "assistant"
-                            : "suggestions"}
-                        </div>
-                        <button
-                          onClick={() => selectModel("")}
-                          className="w-full text-left px-3 py-2 text-sm text-text-2 hover:bg-surface border-b border-border/50"
-                        >
-                          Default (server picks)
-                        </button>
-                        {models.map((m) => (
-                          <button
-                            key={`${m.providerId}/${m.modelId}`}
-                            onClick={() =>
-                              selectModel(`${m.providerId}/${m.modelId}`)
-                            }
-                            className="w-full text-left px-3 py-2 text-sm text-text hover:bg-surface"
-                          >
-                            <div className="truncate">{m.label}</div>
-                            <div className="text-xs text-text-3 truncate">
-                              {m.modelId}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+
                     <button
                       onClick={saveAI}
-                      className="w-full py-2.5 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-colors"
+                      className="w-full py-2.5 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-colors flex items-center justify-center gap-2"
                     >
-                      Save AI settings
+                      <Check size={14} /> Save AI settings
                     </button>
                   </>
                 )}
@@ -393,6 +430,28 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                         <option value="week">Week</option>
                       </select>
                     </SettingRow>
+
+                    <SettingToggle
+                      label="Week starts on Monday"
+                      description="When off, weeks start on Sunday"
+                      checked={
+                        (state.pageSettings.calendar.weekStartsOn ?? 0) === 1
+                      }
+                      onChange={() =>
+                        dispatch({
+                          type: "UPDATE_PAGE_SETTINGS",
+                          key: "calendar",
+                          settings: {
+                            weekStartsOn:
+                              (state.pageSettings.calendar.weekStartsOn ??
+                                0) === 1
+                                ? 0
+                                : 1,
+                          },
+                        })
+                      }
+                    />
+
                     <SettingToggle
                       label="Show weekends"
                       checked={state.pageSettings.calendar.showWeekends}
@@ -408,7 +467,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                       }
                     />
                     <SettingToggle
-                      label="Show declined"
+                      label="Show declined events"
                       checked={state.pageSettings.calendar.showDeclined}
                       onChange={() =>
                         dispatch({
@@ -443,6 +502,114 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                         placeholder="e.g. America/New_York"
                       />
                     </SettingRow>
+
+                    {/* Google Calendar selection */}
+                    <SettingRow
+                      label="Google Calendars"
+                      description="Select which calendars to display. Leave all unchecked to show primary only."
+                    >
+                      {calendarListLoading ? (
+                        <div className="flex items-center gap-2 text-sm text-text-3 py-2">
+                          <RefreshCw size={13} className="animate-spin" />
+                          Loading calendars…
+                        </div>
+                      ) : calendarList.length === 0 ? (
+                        <button
+                          onClick={loadCalendarList}
+                          className="flex items-center gap-2 text-sm text-accent hover:underline"
+                        >
+                          <RefreshCw size={13} /> Load calendars
+                        </button>
+                      ) : (
+                        <div className="flex flex-col gap-2.5">
+                          {calendarList.map((cal) => {
+                            const enabled =
+                              (
+                                state.pageSettings.calendar
+                                  .enabledCalendarIds ?? []
+                              ).includes(cal.id) || cal.primary;
+                            const isChecked = (
+                              state.pageSettings.calendar.enabledCalendarIds ??
+                              []
+                            ).includes(cal.id);
+                            return (
+                              <label
+                                key={cal.id}
+                                className="flex items-center gap-3 cursor-pointer group"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCalendarId(cal.id)}
+                                  className={`relative w-8 h-5 rounded-full transition-all flex-shrink-0 ${
+                                    isChecked
+                                      ? "bg-accent"
+                                      : "bg-border-2 group-hover:bg-border"
+                                  }`}
+                                >
+                                  <div
+                                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                                      isChecked
+                                        ? "translate-x-[14px]"
+                                        : "translate-x-0.5"
+                                    }`}
+                                  />
+                                </button>
+                                <div
+                                  className="w-3 h-3 rounded-full flex-shrink-0"
+                                  style={{
+                                    backgroundColor:
+                                      cal.backgroundColor ??
+                                      "var(--color-accent)",
+                                  }}
+                                />
+                                <span className="text-sm text-text group-hover:text-text transition-colors">
+                                  {cal.summary}
+                                  {cal.primary && (
+                                    <span className="ml-1.5 text-xs text-text-3">
+                                      (primary)
+                                    </span>
+                                  )}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </SettingRow>
+
+                    {/* Default calendar for new events */}
+                    {calendarList.length > 0 && (
+                      <SettingRow
+                        label="Default calendar for new events"
+                        description="Events you create will be saved to this calendar"
+                      >
+                        <select
+                          className="settings-select"
+                          value={
+                            state.pageSettings.calendar.defaultCalendarId ??
+                            "primary"
+                          }
+                          onChange={(e) =>
+                            dispatch({
+                              type: "UPDATE_PAGE_SETTINGS",
+                              key: "calendar",
+                              settings: {
+                                defaultCalendarId: e.target.value,
+                              },
+                            })
+                          }
+                        >
+                          <option value="primary">Primary calendar</option>
+                          {calendarList
+                            .filter((c) => !c.primary)
+                            .map((cal) => (
+                              <option key={cal.id} value={cal.id}>
+                                {cal.summary}
+                              </option>
+                            ))}
+                        </select>
+                      </SettingRow>
+                    )}
                   </>
                 )}
 
@@ -552,6 +719,50 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
+function ModelDropdown({
+  models,
+  currentValue,
+  label,
+  onSelect,
+}: {
+  models: ModelOption[];
+  currentValue: string;
+  label: string;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <div className="max-h-48 overflow-y-auto bg-surface-2 border border-border-2 rounded-lg shadow-xl mt-1">
+      <div className="px-3 py-1.5 text-xs text-text-3 uppercase tracking-wider border-b border-border sticky top-0 bg-surface-2">
+        Select for {label}
+      </div>
+      <button
+        onClick={() => onSelect("")}
+        className="w-full text-left px-3 py-2 text-sm text-text-2 hover:bg-surface border-b border-border/50"
+      >
+        Default (server picks)
+      </button>
+      {models.map((m) => {
+        const val = `${m.providerId}/${m.modelId}`;
+        return (
+          <button
+            key={val}
+            onClick={() => onSelect(val)}
+            className={`w-full text-left px-3 py-2 text-sm hover:bg-surface flex items-center gap-2 ${currentValue === val ? "text-accent" : "text-text"}`}
+          >
+            {currentValue === val && (
+              <Check size={12} className="flex-shrink-0" />
+            )}
+            <div className="min-w-0">
+              <div className="truncate">{m.label}</div>
+              <div className="text-xs text-text-3 truncate">{m.modelId}</div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function SettingRow({
   label,
   description,
@@ -574,25 +785,32 @@ function SettingRow({
 
 function SettingToggle({
   label,
+  description,
   checked,
   onChange,
 }: {
   label: string;
+  description?: string;
   checked: boolean;
   onChange: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between pb-5 border-b border-border/50 last:border-b-0 last:pb-0">
-      <span className="text-sm font-medium text-text">{label}</span>
-      <button
-        onClick={onChange}
-        className={`relative rounded-full transition-colors ${checked ? "bg-accent" : "bg-border-2"}`}
-        style={{ height: 22, width: 40 }}
-      >
-        <div
-          className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-[20px]" : "translate-x-[3px]"}`}
-        />
-      </button>
+    <div className="flex flex-col gap-1 pb-5 border-b border-border/50 last:border-b-0 last:pb-0">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-text">{label}</span>
+        <button
+          onClick={onChange}
+          className={`relative rounded-full transition-colors flex-shrink-0 ${checked ? "bg-accent" : "bg-border-2"}`}
+          style={{ height: 22, width: 40 }}
+        >
+          <div
+            className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-[20px]" : "translate-x-[3px]"}`}
+          />
+        </button>
+      </div>
+      {description && (
+        <span className="text-xs text-text-3">{description}</span>
+      )}
     </div>
   );
 }

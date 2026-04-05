@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -15,6 +15,7 @@ import {
   CheckSquare,
   AlignLeft,
   RefreshCw,
+  ChevronDown,
 } from "lucide-react";
 import {
   format,
@@ -36,6 +37,7 @@ import {
 import { useApp } from "@/context/AppContext";
 import { useResizable } from "@/lib/useResizable";
 import { useCalendar, type CalendarEvent } from "@/hooks/useCalendar";
+import type { GoogleCalendarList } from "@/types";
 
 type ViewMode = "month" | "week";
 
@@ -53,9 +55,18 @@ const EVENT_COLORS: Record<string, string> = {
   "11": "#ff8bcb",
 };
 
-function eventColor(event: CalendarEvent): string {
-  return EVENT_COLORS[event.colorId ?? ""] ?? "var(--color-accent)";
-}
+// Distinct palette for calendar-based coloring when no colorId is set
+const CALENDAR_PALETTE = [
+  "#818cf8",
+  "#34d399",
+  "#fb923c",
+  "#f472b6",
+  "#60a5fa",
+  "#a78bfa",
+  "#facc15",
+  "#4ade80",
+];
+
 function eventStart(event: CalendarEvent): Date {
   return parseISO(event.start.dateTime ?? event.start.date ?? "");
 }
@@ -84,6 +95,8 @@ export default function CalendarPage() {
   const { state, dispatch } = useApp();
   const cal = useCalendar();
 
+  const weekStartsOn = (state.pageSettings.calendar.weekStartsOn ?? 0) as 0 | 1;
+
   const [view, setView] = useState<ViewMode>(
     state.pageSettings.calendar.defaultView,
   );
@@ -94,6 +107,63 @@ export default function CalendarPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createDate, setCreateDate] = useState("");
   const [importPanelOpen, setImportPanelOpen] = useState(false);
+
+  // Calendar list for coloring & selector
+  const [calendarList, setCalendarList] = useState<GoogleCalendarList[]>([]);
+  const calColorMap = useRef<Map<string, string>>(new Map());
+
+  // Build a stable color map from the fetched calendar list
+  useEffect(() => {
+    const map = new Map<string, string>();
+    calendarList.forEach((cal, idx) => {
+      map.set(
+        cal.id,
+        cal.backgroundColor ?? CALENDAR_PALETTE[idx % CALENDAR_PALETTE.length],
+      );
+    });
+    calColorMap.current = map;
+  }, [calendarList]);
+
+  // Resolve the "primary" sentinel to the actual calendar ID.
+  // Google uses "primary" as an alias but option values must match cal.id exactly.
+  function resolveCalendarId(id: string): string {
+    if (id !== "primary") return id;
+    const primaryCal = calendarList.find((c) => c.primary);
+    return primaryCal ? primaryCal.id : id;
+  }
+
+  useEffect(() => {
+    fetch("/api/calendar/lists")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.calendars) setCalendarList(data.calendars);
+      })
+      .catch(() => {
+        /* silent */
+      });
+  }, []);
+
+  // Once the calendar list loads, re-resolve "primary" to the real calendar ID
+  // so the selector has the correct default before the user opens the form.
+  useEffect(() => {
+    if (calendarList.length === 0) return;
+    setFormCalendarId(
+      resolveCalendarId(
+        state.pageSettings.calendar.defaultCalendarId || "primary",
+      ),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarList]);
+
+  function eventColor(event: CalendarEvent): string {
+    if (event.colorId && EVENT_COLORS[event.colorId]) {
+      return EVENT_COLORS[event.colorId];
+    }
+    if (event.calendarId && calColorMap.current.has(event.calendarId)) {
+      return calColorMap.current.get(event.calendarId)!;
+    }
+    return "var(--color-accent)";
+  }
 
   const importResize = useResizable({
     side: "left",
@@ -114,7 +184,17 @@ export default function CalendarPage() {
   const [formAllDay, setFormAllDay] = useState(false);
   const [formDesc, setFormDesc] = useState("");
   const [formLocation, setFormLocation] = useState("");
+  const [formCalendarId, setFormCalendarId] = useState(
+    state.pageSettings.calendar.defaultCalendarId || "primary",
+  );
   const [saving, setSaving] = useState(false);
+
+  // Current time line
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (!state.calendarPrefill) return;
@@ -156,9 +236,14 @@ export default function CalendarPage() {
       setFormEnd(`${dateStr}T10:00`);
     }
     setFormLocation("");
+    setFormCalendarId(
+      resolveCalendarId(
+        state.pageSettings.calendar.defaultCalendarId || "primary",
+      ),
+    );
     setCreateOpen(true);
     dispatch({ type: "CLEAR_CALENDAR_PREFILL" });
-  }, [state.calendarPrefill, dispatch]);
+  }, [state.calendarPrefill, dispatch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const timeMin = startOfMonth(subMonths(cursor, 1)).toISOString();
@@ -189,15 +274,25 @@ export default function CalendarPage() {
     else setCursor(dir === 1 ? addWeeks(cursor, 1) : subWeeks(cursor, 1));
   }
 
-  function openCreate(dateStr?: string) {
+  function openCreate(dateStr?: string, time?: string) {
     const d = dateStr ?? format(new Date(), "yyyy-MM-dd");
+    const t = time ?? "09:00";
+    const start = `${d}T${t}`;
+    const [h, m] = t.split(":").map(Number);
+    const endHour = h + 1;
+    const endTime = `${endHour.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
     setCreateDate(d);
     setFormTitle("");
-    setFormStart(`${d}T09:00`);
-    setFormEnd(`${d}T10:00`);
+    setFormStart(start);
+    setFormEnd(`${d}T${endTime}`);
     setFormAllDay(false);
     setFormDesc("");
     setFormLocation("");
+    setFormCalendarId(
+      resolveCalendarId(
+        state.pageSettings.calendar.defaultCalendarId || "primary",
+      ),
+    );
     setCreateOpen(true);
   }
 
@@ -211,6 +306,7 @@ export default function CalendarPage() {
       summary: formTitle,
       description: formDesc || undefined,
       location: formLocation || undefined,
+      calendarId: formCalendarId || "primary",
       start: formAllDay
         ? { dateTime: createDate, timeZone: tz }
         : { dateTime: new Date(formStart).toISOString(), timeZone: tz },
@@ -240,6 +336,11 @@ export default function CalendarPage() {
     setFormEnd(`${dateStr}T10:00`);
     setFormAllDay(false);
     setFormLocation("");
+    setFormCalendarId(
+      resolveCalendarId(
+        state.pageSettings.calendar.defaultCalendarId || "primary",
+      ),
+    );
     setCreateOpen(true);
     setImportPanelOpen(false);
   }
@@ -253,20 +354,31 @@ export default function CalendarPage() {
     setFormEnd(`${dateStr}T10:00`);
     setFormAllDay(false);
     setFormLocation("");
+    setFormCalendarId(
+      resolveCalendarId(
+        state.pageSettings.calendar.defaultCalendarId || "primary",
+      ),
+    );
     setCreateOpen(true);
     setImportPanelOpen(false);
   }
 
   const monthStart = startOfMonth(cursor);
   const monthEnd = endOfMonth(cursor);
-  const gridStart = startOfWeek(monthStart, { weekStartsOn: 0 });
-  const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+  const gridStart = startOfWeek(monthStart, { weekStartsOn });
+  const gridEnd = endOfWeek(monthEnd, { weekStartsOn });
   const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
 
-  const weekStart = startOfWeek(cursor, { weekStartsOn: 0 });
-  const weekEnd = endOfWeek(cursor, { weekStartsOn: 0 });
+  const weekStart = startOfWeek(cursor, { weekStartsOn });
+  const weekEnd = endOfWeek(cursor, { weekStartsOn });
   const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
   const hours = Array.from({ length: 24 }, (_, i) => i);
+
+  // Day labels in correct order based on weekStartsOn
+  const dayLabels =
+    weekStartsOn === 1
+      ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+      : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   function eventsOnDay(day: Date): CalendarEvent[] {
     return cal.events.filter((e) => {
@@ -276,6 +388,76 @@ export default function CalendarPage() {
         return false;
       }
     });
+  }
+
+  // Current time position in the week grid (pixels, 56px per hour)
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const nowTop = (nowMinutes / 60) * 56;
+
+  // Compute overlap layout for a set of timed events on a single day.
+  // Returns a map from event id → { col, totalCols }.
+  function computeOverlapLayout(
+    events: CalendarEvent[],
+  ): Map<string, { col: number; totalCols: number }> {
+    // Sort by start time, then by duration descending
+    const sorted = [...events].sort((a, b) => {
+      const diff = eventStart(a).getTime() - eventStart(b).getTime();
+      if (diff !== 0) return diff;
+      return (
+        eventEnd(b).getTime() -
+        eventStart(b).getTime() -
+        (eventEnd(a).getTime() - eventStart(a).getTime())
+      );
+    });
+
+    // Each slot tracks the end-time of the last event placed in that column
+    const cols: number[] = []; // cols[i] = end-time (ms) of last event in column i
+    const layout = new Map<string, { col: number; totalCols: number }>();
+
+    for (const ev of sorted) {
+      const start = eventStart(ev).getTime();
+      const end = eventEnd(ev).getTime();
+
+      // Find the first column whose last event has already ended
+      let placed = -1;
+      for (let i = 0; i < cols.length; i++) {
+        if (cols[i] <= start) {
+          placed = i;
+          break;
+        }
+      }
+      if (placed === -1) {
+        placed = cols.length;
+        cols.push(0);
+      }
+      cols[placed] = end;
+      layout.set(ev.id, { col: placed, totalCols: 0 }); // totalCols filled below
+    }
+
+    const totalCols = cols.length;
+
+    // Second pass: for each event, totalCols = number of cols that actually
+    // overlap with it (to avoid giving an event unnecessarily narrow width).
+    for (const ev of sorted) {
+      const entry = layout.get(ev.id)!;
+      const start = eventStart(ev).getTime();
+      const end = eventEnd(ev).getTime();
+
+      // Count how many columns contain an event that overlaps this one
+      let maxCol = entry.col;
+      for (const other of sorted) {
+        if (other.id === ev.id) continue;
+        const oStart = eventStart(other).getTime();
+        const oEnd = eventEnd(other).getTime();
+        if (oStart < end && oEnd > start) {
+          const otherEntry = layout.get(other.id)!;
+          if (otherEntry.col > maxCol) maxCol = otherEntry.col;
+        }
+      }
+      entry.totalCols = maxCol + 1 < totalCols ? maxCol + 1 : totalCols;
+    }
+
+    return layout;
   }
 
   return (
@@ -299,7 +481,8 @@ export default function CalendarPage() {
           </div>
           <button
             onClick={() => setCursor(new Date())}
-            className="px-3 py-1.5 text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:border-accent hover:text-accent transition-all"
+            style={{ padding: "2px 12px" }}
+            className="text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:border-accent hover:text-accent transition-all"
           >
             Today
           </button>
@@ -331,7 +514,8 @@ export default function CalendarPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setImportPanelOpen(!importPanelOpen)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border rounded-lg transition-all ${
+            style={{ padding: "2px 12px" }}
+            className={`flex items-center gap-1.5 text-sm font-medium border rounded-lg transition-all ${
               importPanelOpen
                 ? "border-accent text-accent bg-accent/10"
                 : "border-border-2 text-text-2 hover:border-accent hover:text-accent"
@@ -345,7 +529,8 @@ export default function CalendarPage() {
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                style={{ padding: "2px 12px" }}
+                className={`text-sm font-medium transition-colors ${
                   view === v
                     ? "bg-accent/15 text-accent"
                     : "text-text-2 hover:text-text hover:bg-surface"
@@ -357,7 +542,8 @@ export default function CalendarPage() {
           </div>
           <button
             onClick={() => openCreate()}
-            className="flex items-center gap-1.5 px-4 py-2 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-all"
+            style={{ padding: "2px 12px" }}
+            className="flex items-center gap-1.5 text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:border-accent hover:text-accent transition-all"
           >
             <Plus size={14} /> New event
           </button>
@@ -370,7 +556,7 @@ export default function CalendarPage() {
           {view === "month" ? (
             <div className="flex-1 flex flex-col overflow-hidden">
               <div className="grid grid-cols-7 border-b border-border">
-                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                {dayLabels.map((d) => (
                   <div
                     key={d}
                     className="py-2 text-center text-xs text-text-3 font-semibold uppercase tracking-widest"
@@ -401,7 +587,7 @@ export default function CalendarPage() {
                         {format(day, "d")}
                       </div>
                       <div className="flex flex-col gap-0.5">
-                        {dayEvents.slice(0, 3).map((ev) => (
+                        {dayEvents.map((ev) => (
                           <button
                             key={ev.id}
                             onClick={(e) => {
@@ -424,11 +610,6 @@ export default function CalendarPage() {
                             {ev.summary}
                           </button>
                         ))}
-                        {dayEvents.length > 3 && (
-                          <span className="text-xs text-text-3 px-1.5">
-                            +{dayEvents.length - 3} more
-                          </span>
-                        )}
                       </div>
                     </div>
                   );
@@ -523,19 +704,46 @@ export default function CalendarPage() {
                     const dayEvents = eventsOnDay(day).filter(
                       (e) => e.start.dateTime,
                     );
+                    const overlapLayout = computeOverlapLayout(dayEvents);
+                    const todayCol = isToday(day);
                     return (
                       <div
                         key={day.toISOString()}
-                        className="border-l border-border relative hover:bg-surface/30 transition-colors cursor-pointer"
-                        onClick={() => openCreate(format(day, "yyyy-MM-dd"))}
+                        className="border-l border-border relative"
                       >
                         {hours.map((h) => (
                           <div
                             key={h}
                             style={{ height: 56 }}
-                            className="border-b border-border/30"
+                            className="border-b border-border/30 hover:bg-surface/30 transition-colors cursor-pointer"
+                            onClick={() => {
+                              const time = `${h.toString().padStart(2, "0")}:00`;
+                              openCreate(format(day, "yyyy-MM-dd"), time);
+                            }}
                           />
                         ))}
+                        {/* Current time indicator */}
+                        {todayCol && (
+                          <div
+                            className="absolute left-0 right-0 z-10 pointer-events-none"
+                            style={{ top: nowTop }}
+                          >
+                            <div className="flex items-center h-2">
+                              <div
+                                className="w-2 h-2 rounded-full flex-shrink-0"
+                                style={{
+                                  backgroundColor: "var(--color-danger)",
+                                }}
+                              />
+                              <div
+                                className="flex-1 h-[2px]"
+                                style={{
+                                  backgroundColor: "var(--color-danger)",
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
                         {dayEvents.map((ev) => {
                           const start = eventStart(ev);
                           const end = eventEnd(ev);
@@ -547,6 +755,15 @@ export default function CalendarPage() {
                           );
                           const top = (startMinutes / 60) * 56;
                           const height = (durationMinutes / 60) * 56;
+                          const color = eventColor(ev);
+                          const layout = overlapLayout.get(ev.id) ?? {
+                            col: 0,
+                            totalCols: 1,
+                          };
+                          const widthPct = 100 / layout.totalCols;
+                          const leftPct = layout.col * widthPct;
+                          // Slight inset so adjacent columns have a small gap
+                          const GAP = 2; // px
                           return (
                             <button
                               key={ev.id}
@@ -554,16 +771,22 @@ export default function CalendarPage() {
                                 e.stopPropagation();
                                 setSelectedEvent(ev);
                               }}
-                              className="absolute left-0.5 right-0.5 rounded-lg px-2 py-1 text-xs font-medium text-left overflow-hidden transition-opacity hover:opacity-80"
+                              className="absolute rounded-lg px-2 text-xs font-medium text-left overflow-hidden transition-opacity hover:opacity-80"
                               style={{
                                 top,
                                 height,
-                                backgroundColor: eventColor(ev) + "38",
-                                color: eventColor(ev),
-                                borderLeft: `2px solid ${eventColor(ev)}`,
+                                left: `calc(${leftPct}% + ${layout.col === 0 ? 2 : GAP}px)`,
+                                right: `calc(${100 - leftPct - widthPct}% + ${layout.col === layout.totalCols - 1 ? 2 : GAP}px)`,
+                                backgroundColor: color + "38",
+                                color,
+                                borderLeft: `3px solid ${color}`,
+                                borderTop: `1px solid ${color}60`,
+                                borderBottom: `1px solid ${color}60`,
+                                paddingTop: 3,
+                                paddingBottom: 3,
                               }}
                             >
-                              <div className="truncate font-semibold">
+                              <div className="truncate font-semibold leading-tight">
                                 {ev.summary}
                               </div>
                               <div className="truncate opacity-70 text-xs">
@@ -737,11 +960,24 @@ export default function CalendarPage() {
                 </span>
               </div>
             )}
+            {selectedEvent.calendarId && calendarList.length > 0 && (
+              <div className="flex items-start gap-3 text-sm text-text-2">
+                <CalIcon
+                  size={14}
+                  className="flex-shrink-0 mt-0.5 text-text-3"
+                />
+                <span className="leading-relaxed">
+                  {calendarList.find((c) => c.id === selectedEvent.calendarId)
+                    ?.summary ?? selectedEvent.calendarId}
+                </span>
+              </div>
+            )}
           </div>
           <div className="px-5 pb-5">
             <button
               onClick={() => handleDelete(selectedEvent.id)}
-              className="w-full py-2 text-sm font-medium text-danger border border-danger/25 rounded-lg hover:bg-danger/8 hover:border-danger/50 transition-all"
+              style={{ padding: "2px 12px" }}
+              className="w-full text-sm font-medium text-danger border border-danger/25 rounded-lg hover:bg-danger/8 hover:border-danger/50 transition-all"
             >
               Delete event
             </button>
@@ -756,7 +992,7 @@ export default function CalendarPage() {
           onClick={() => setCreateOpen(false)}
         >
           <div
-            className="bg-surface border border-border-2 rounded-xl w-full max-w-[480px] shadow-2xl overflow-hidden"
+            className="bg-surface border border-border-2 rounded-xl w-full max-w-[500px] shadow-2xl overflow-hidden"
             style={{
               animation: "slideUpLocal 0.18s ease-out both",
             }}
@@ -784,6 +1020,7 @@ export default function CalendarPage() {
               </button>
             </div>
             <div className="flex flex-col gap-4 px-6 py-5">
+              {/* Title */}
               <input
                 autoFocus
                 className="w-full bg-transparent border-b border-border-2 px-0 py-2 text-base font-semibold text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
@@ -794,6 +1031,8 @@ export default function CalendarPage() {
                   e.key === "Enter" && !saving && formTitle && handleCreate()
                 }
               />
+
+              {/* All day toggle */}
               <div className="flex items-center justify-between">
                 <span className="text-sm text-text-2">All day</span>
                 <button
@@ -807,6 +1046,8 @@ export default function CalendarPage() {
                   />
                 </button>
               </div>
+
+              {/* Date/time */}
               {!formAllDay && (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1">
@@ -833,42 +1074,74 @@ export default function CalendarPage() {
                   </div>
                 </div>
               )}
-              <div className="relative">
-                <MapPin
-                  size={14}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-text-3"
-                />
+
+              {/* Location — label above, no overlapping icon */}
+              <div className="flex flex-col gap-1">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-text-3 uppercase tracking-widest">
+                  <MapPin size={11} /> Location
+                </label>
                 <input
-                  className="w-full bg-bg border border-border-2 rounded-lg pl-9 pr-4 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
+                  className="w-full bg-bg border border-border-2 rounded-lg px-3 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
                   placeholder="Add location"
                   value={formLocation}
                   onChange={(e) => setFormLocation(e.target.value)}
                 />
               </div>
-              <div className="relative">
-                <AlignLeft
-                  size={14}
-                  className="absolute left-3 top-3 text-text-3"
-                />
+
+              {/* Description — label above, no overlapping icon */}
+              <div className="flex flex-col gap-1">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-text-3 uppercase tracking-widest">
+                  <AlignLeft size={11} /> Description
+                </label>
                 <textarea
-                  className="w-full bg-bg border border-border-2 rounded-lg pl-9 pr-4 py-2.5 text-sm text-text outline-none focus:border-accent resize-none placeholder:text-text-3 transition-colors leading-relaxed"
+                  className="w-full bg-bg border border-border-2 rounded-lg px-3 py-2.5 text-sm text-text outline-none focus:border-accent resize-none placeholder:text-text-3 transition-colors leading-relaxed"
                   placeholder="Add description"
                   rows={3}
                   value={formDesc}
                   onChange={(e) => setFormDesc(e.target.value)}
                 />
               </div>
+
+              {/* Calendar selector */}
+              {calendarList.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-text-3 uppercase tracking-widest">
+                    <CalIcon size={11} /> Calendar
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={formCalendarId}
+                      onChange={(e) => setFormCalendarId(e.target.value)}
+                      className="w-full appearance-none bg-bg border border-border-2 rounded-lg px-3 py-2.5 text-sm text-text outline-none focus:border-accent transition-colors pr-8 cursor-pointer"
+                    >
+                      {calendarList.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.summary}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown
+                      size={13}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
               <div className="flex gap-3 pt-1">
                 <button
                   onClick={() => setCreateOpen(false)}
-                  className="flex-1 py-2.5 text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:bg-surface-2 hover:text-text transition-all"
+                  style={{ padding: "2px 12px" }}
+                  className="flex-1 text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:bg-surface-2 hover:text-text transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCreate}
                   disabled={saving || !formTitle}
-                  className="flex-1 py-2.5 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                  style={{ padding: "2px 12px" }}
+                  className="flex-1 text-sm font-semibold text-white bg-accent rounded-lg hover:bg-accent-hover transition-all disabled:opacity-40 flex items-center justify-center gap-2"
                 >
                   {saving ? (
                     <Loader2 size={14} className="animate-spin" />

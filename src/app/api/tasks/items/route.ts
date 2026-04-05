@@ -23,13 +23,21 @@ export async function GET(req: Request) {
   const tasks = getTasksClient(session.accessToken);
 
   try {
-    const res = await tasks.tasks.list({
-      tasklist: listId,
-      maxResults: 100,
-      showCompleted: true,
-      showHidden: true,
-    });
-    return NextResponse.json({ items: res.data.items ?? [] });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allItems: any[] = [];
+    let pageToken: string | undefined;
+    do {
+      const res = await tasks.tasks.list({
+        tasklist: listId,
+        maxResults: 100,
+        showCompleted: true,
+        showHidden: true,
+        ...(pageToken ? { pageToken } : {}),
+      });
+      allItems.push(...(res.data.items ?? []));
+      pageToken = res.data.nextPageToken ?? undefined;
+    } while (pageToken);
+    return NextResponse.json({ items: allItems });
   } catch (err: unknown) {
     if (isAuthError(err))
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

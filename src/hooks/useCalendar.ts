@@ -12,10 +12,11 @@ export interface CalendarEvent {
   end: { dateTime?: string; date?: string };
   htmlLink?: string;
   colorId?: string;
+  calendarId?: string;
 }
 
 export function useCalendar() {
-  const { notify } = useApp();
+  const { state, notify } = useApp();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -26,6 +27,12 @@ export function useCalendar() {
         const params = new URLSearchParams();
         if (timeMin) params.set("timeMin", timeMin);
         if (timeMax) params.set("timeMax", timeMax);
+
+        const enabledIds = state.pageSettings.calendar.enabledCalendarIds;
+        if (enabledIds && enabledIds.length > 0) {
+          params.set("calendarIds", enabledIds.join(","));
+        }
+
         const res = await fetch(`/api/calendar/events?${params}`);
         if (!res.ok) throw new Error("Failed to fetch events");
         const data = await res.json();
@@ -36,7 +43,8 @@ export function useCalendar() {
         setLoading(false);
       }
     },
-    [notify],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [notify, state.pageSettings.calendar.enabledCalendarIds],
   );
 
   const createEvent = useCallback(
@@ -46,12 +54,18 @@ export function useCalendar() {
       location?: string;
       start: { dateTime: string; timeZone?: string };
       end: { dateTime: string; timeZone?: string };
+      calendarId?: string;
     }) => {
       try {
+        const { calendarId, ...rest } = event;
+        const targetCalendarId =
+          calendarId ||
+          state.pageSettings.calendar.defaultCalendarId ||
+          "primary";
         const res = await fetch("/api/calendar/events", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(event),
+          body: JSON.stringify({ ...rest, calendarId: targetCalendarId }),
         });
         if (!res.ok) throw new Error("Create event failed");
         const data = await res.json();
@@ -63,7 +77,8 @@ export function useCalendar() {
         return null;
       }
     },
-    [notify],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [notify, state.pageSettings.calendar.defaultCalendarId],
   );
 
   const updateEvent = useCallback(

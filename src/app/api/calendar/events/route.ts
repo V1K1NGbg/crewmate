@@ -16,18 +16,41 @@ export async function GET(req: Request) {
     searchParams.get("timeMax") ??
     new Date(Date.now() + 60 * 86400000).toISOString();
 
+  // calendarIds is a comma-separated list; defaults to "primary"
+  const calendarIdsParam = searchParams.get("calendarIds");
+  const calendarIds = calendarIdsParam
+    ? calendarIdsParam.split(",").filter(Boolean)
+    : ["primary"];
+
   const calendar = getCalendarClient(session.accessToken);
 
   try {
-    const res = await calendar.events.list({
-      calendarId: "primary",
-      timeMin,
-      timeMax,
-      singleEvents: true,
-      orderBy: "startTime",
-      maxResults: 250,
-    });
-    return NextResponse.json({ events: res.data.items ?? [] });
+    const allEvents = await Promise.all(
+      calendarIds.map(async (calendarId) => {
+        const res = await calendar.events.list({
+          calendarId,
+          timeMin,
+          timeMax,
+          singleEvents: true,
+          orderBy: "startTime",
+          maxResults: 250,
+        });
+        return (res.data.items ?? []).map((ev) => ({
+          ...ev,
+          calendarId,
+        }));
+      }),
+    );
+
+    const events = allEvents
+      .flat()
+      .sort((a, b) => {
+        const aStart = (a.start?.dateTime ?? a.start?.date) || "";
+        const bStart = (b.start?.dateTime ?? b.start?.date) || "";
+        return aStart.localeCompare(bStart);
+      });
+
+    return NextResponse.json({ events });
   } catch (err: unknown) {
     if (isAuthError(err))
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -41,15 +64,15 @@ export async function POST(req: Request) {
   if (!session?.accessToken)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await req.json();
+  const { calendarId = "primary", ...body } = await req.json();
   const calendar = getCalendarClient(session.accessToken);
 
   try {
     const res = await calendar.events.insert({
-      calendarId: "primary",
+      calendarId,
       requestBody: body,
     });
-    return NextResponse.json(res.data);
+    return NextResponse.json({ ...res.data, calendarId });
   } catch (err: unknown) {
     if (isAuthError(err))
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -310,6 +310,14 @@ export interface GmailSettings {
   suggestionModel: string;
 }
 
+export interface GoogleCalendarList {
+  id: string;
+  summary: string;
+  backgroundColor?: string;
+  foregroundColor?: string;
+  primary?: boolean;
+}
+
 export interface CalendarSettings {
   defaultView: "month" | "week";
   showWeekends: boolean;
@@ -317,6 +325,9 @@ export interface CalendarSettings {
   startHour: number;
   endHour: number;
   timezone: string;
+  weekStartsOn: 0 | 1; // 0 = Sunday, 1 = Monday
+  enabledCalendarIds: string[]; // empty means all
+  defaultCalendarId: string; // calendar for new events
 }
 
 export interface NotesSettings {
@@ -349,6 +360,14 @@ export interface AssistantMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  sessionId: string;
+}
+
+export interface AssistantSession {
+  id: string;
+  title: string;
+  createdAt: string;
+  messages: AssistantMessage[];
 }
 
 // ─── Gmail ────────────────────────────────────────────────────────────────────
@@ -392,4 +411,5 @@ export interface CalendarEvent {
   location?: string;
   colorId?: string;
   htmlLink?: string;
+  calendarId?: string; // which calendar this event belongs to
 }

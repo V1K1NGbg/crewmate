@@ -20,6 +20,7 @@ import type {
   TaskPrefill,
   PageSettings,
   AssistantMessage,
+  AssistantSession,
   GmailThread,
   CalendarEvent,
 } from "@/types";
@@ -67,6 +68,9 @@ export const DEFAULT_PAGE_SETTINGS: PageSettings = {
     startHour: 8,
     endHour: 20,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    weekStartsOn: 0 as 0 | 1,
+    enabledCalendarIds: [] as string[],
+    defaultCalendarId: "primary",
   },
   notes: { fontSize: 14, autoSaveDelay: 1000 },
   tasks: { defaultFilter: "all", sortBy: "priority" },
@@ -94,7 +98,8 @@ export interface AppState {
   notePrefill: NotePrefill | null;
   taskPrefill: TaskPrefill | null;
   pageSettings: PageSettings;
-  assistantMessages: AssistantMessage[];
+  assistantSessions: AssistantSession[];
+  activeSessionId: string | null;
   panelWidths: Record<string, number>;
   gmailThreads: GmailThread[];
   calendarEvents: CalendarEvent[];
@@ -132,6 +137,9 @@ export type Action =
   | { type: "SET_COLOR_SCHEME"; schemeId: string }
   | { type: "ADD_ASSISTANT_MESSAGE"; message: AssistantMessage }
   | { type: "CLEAR_ASSISTANT_MESSAGES" }
+  | { type: "SET_ACTIVE_ASSISTANT_SESSION"; sessionId: string | null }
+  | { type: "CREATE_ASSISTANT_SESSION"; session: AssistantSession }
+  | { type: "DELETE_ASSISTANT_SESSION"; sessionId: string }
   | { type: "SET_PANEL_WIDTH"; key: string; width: number }
   | { type: "SET_GMAIL_THREADS"; threads: GmailThread[] }
   | { type: "SET_CALENDAR_EVENTS"; events: CalendarEvent[] }
@@ -277,13 +285,45 @@ function reducer(state: AppState, action: Action): AppState {
         },
       };
 
-    case "ADD_ASSISTANT_MESSAGE":
+    case "ADD_ASSISTANT_MESSAGE": {
+      if (!state.activeSessionId) return state;
       return {
         ...state,
-        assistantMessages: [...state.assistantMessages, action.message],
+        assistantSessions: state.assistantSessions.map((s) =>
+          s.id === state.activeSessionId
+            ? { ...s, messages: [...s.messages, action.message] }
+            : s,
+        ),
       };
-    case "CLEAR_ASSISTANT_MESSAGES":
-      return { ...state, assistantMessages: [] };
+    }
+    case "CLEAR_ASSISTANT_MESSAGES": {
+      if (!state.activeSessionId) return state;
+      return {
+        ...state,
+        assistantSessions: state.assistantSessions.map((s) =>
+          s.id === state.activeSessionId ? { ...s, messages: [] } : s,
+        ),
+      };
+    }
+    case "SET_ACTIVE_ASSISTANT_SESSION":
+      return { ...state, activeSessionId: action.sessionId };
+    case "CREATE_ASSISTANT_SESSION":
+      return {
+        ...state,
+        assistantSessions: [action.session, ...state.assistantSessions],
+        activeSessionId: action.session.id,
+      };
+    case "DELETE_ASSISTANT_SESSION":
+      return {
+        ...state,
+        assistantSessions: state.assistantSessions.filter(
+          (s) => s.id !== action.sessionId,
+        ),
+        activeSessionId:
+          state.activeSessionId === action.sessionId
+            ? (state.assistantSessions[0]?.id ?? null)
+            : state.activeSessionId,
+      };
 
     case "SET_PANEL_WIDTH":
       return {
@@ -341,7 +381,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...DEFAULT_PAGE_SETTINGS,
       ...(saved.pageSettings ?? {}),
     } as PageSettings,
-    assistantMessages: [],
+    assistantSessions: (saved.assistantSessions as AssistantSession[])?.[0]?.id
+      ? (saved.assistantSessions as AssistantSession[])
+      : [
+          {
+            id: `session-${Date.now()}`,
+            title: "New conversation",
+            createdAt: new Date().toISOString(),
+            messages: [],
+          },
+        ],
+    activeSessionId: (saved.activeSessionId as string) ?? null,
     panelWidths: (saved.panelWidths as Record<string, number>) ?? {},
     gmailThreads: [],
     calendarEvents: [],
@@ -371,6 +421,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         activeNoteId: state.activeNoteId,
         pageSettings: state.pageSettings,
         panelWidths: state.panelWidths,
+        assistantSessions: state.assistantSessions,
+        activeSessionId: state.activeSessionId,
       }),
     );
   }, [
@@ -381,6 +433,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     state.activeNoteId,
     state.pageSettings,
     state.panelWidths,
+    state.assistantSessions,
+    state.activeSessionId,
   ]);
 
   // Auto-dismiss notifications after 3.5s
