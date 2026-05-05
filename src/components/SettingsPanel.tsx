@@ -294,7 +294,16 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                     {/* Assistant model picker */}
                     <SettingRow
                       label="Assistant model"
-                      description="Model used in the AI chat assistant"
+                      description={
+                        <>
+                          Model used in the AI chat assistant.{" "}
+                          <span className="text-text-muted">
+                            Append <code>:none</code> or <code>:low</code> to
+                            disable/reduce thinking for local models (e.g.{" "}
+                            <code>ollama/...:none</code>).
+                          </span>
+                        </>
+                      }
                     >
                       <div className="flex gap-2">
                         <input
@@ -338,7 +347,16 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                     {/* Suggestion model picker */}
                     <SettingRow
                       label="Suggestion model (Gmail)"
-                      description="Model used for email action suggestions"
+                      description={
+                        <>
+                          Model used for email action suggestions.{" "}
+                          <span className="text-text-muted">
+                            Append <code>:none</code> or <code>:low</code> to
+                            disable/reduce thinking (e.g.{" "}
+                            <code>ollama/...:none</code>).
+                          </span>
+                        </>
+                      }
                     >
                       <div className="flex gap-2">
                         <input
@@ -476,6 +494,22 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                           settings: {
                             showDeclined:
                               !state.pageSettings.calendar.showDeclined,
+                          },
+                        })
+                      }
+                    />
+                    <SettingToggle
+                      label="24-hour time"
+                      checked={
+                        state.pageSettings.calendar.use24HourTime ?? false
+                      }
+                      onChange={() =>
+                        dispatch({
+                          type: "UPDATE_PAGE_SETTINGS",
+                          key: "calendar",
+                          settings: {
+                            use24HourTime:
+                              !state.pageSettings.calendar.use24HourTime,
                           },
                         })
                       }
@@ -769,7 +803,7 @@ function SettingRow({
   children,
 }: {
   label: string;
-  description?: string;
+  description?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (

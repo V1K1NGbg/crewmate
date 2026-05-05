@@ -1,11 +1,7 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import { isAuthError } from "@/lib/googleApiError";
-import {
-  getGmailClient,
-  decodeGmailBody,
-  getGmailHeader,
-} from "@/lib/google";
+import { getGmailClient, decodeGmailBody, getGmailHeader } from "@/lib/google";
 
 export async function GET(req: Request) {
   const session = await auth();
@@ -49,6 +45,7 @@ export async function GET(req: Request) {
           messageCount: thread.data.messages?.length ?? 1,
           labelIds: lastMsg?.labelIds ?? [],
           unread: lastMsg?.labelIds?.includes("UNREAD") ?? false,
+          starred: lastMsg?.labelIds?.includes("STARRED") ?? false,
         };
       }),
     );

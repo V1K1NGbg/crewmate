@@ -21,6 +21,7 @@ import {
   PanelLeftOpen,
   ChevronDown,
   ChevronUp,
+  Star,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useSession, signIn } from "next-auth/react";
@@ -39,7 +40,7 @@ type AIActionType =
   | "create_task"
   | "add_to_notes"
   | "reply_draft"
-  | "mark_important";
+  | "star_email";
 
 interface AIAction {
   type: AIActionType;
@@ -102,39 +103,39 @@ const ACTION_STYLES: Record<
 > = {
   archive: {
     icon: <Archive size={14} />,
-    color: "#a1a1aa",
-    bg: "rgba(63,63,70,0.15)",
-    border: "#3f3f46",
+    color: "var(--color-text-3)",
+    bg: "color-mix(in srgb, var(--color-surface-2) 60%, transparent)",
+    border: "var(--color-border-2)",
   },
   create_event: {
     icon: <CalendarPlus size={14} />,
-    color: "#818cf8",
-    bg: "rgba(129,140,248,0.08)",
-    border: "rgba(129,140,248,0.3)",
+    color: "var(--color-calendar)",
+    bg: "color-mix(in srgb, var(--color-calendar) 8%, transparent)",
+    border: "color-mix(in srgb, var(--color-calendar) 30%, transparent)",
   },
   create_task: {
     icon: <CheckSquare size={14} />,
-    color: "#4ade80",
-    bg: "rgba(74,222,128,0.08)",
-    border: "rgba(74,222,128,0.3)",
+    color: "var(--color-tasks)",
+    bg: "color-mix(in srgb, var(--color-tasks) 8%, transparent)",
+    border: "color-mix(in srgb, var(--color-tasks) 30%, transparent)",
   },
   add_to_notes: {
     icon: <FileText size={14} />,
-    color: "#fbbf24",
-    bg: "rgba(251,191,36,0.08)",
-    border: "rgba(251,191,36,0.3)",
+    color: "var(--color-notes)",
+    bg: "color-mix(in srgb, var(--color-notes) 8%, transparent)",
+    border: "color-mix(in srgb, var(--color-notes) 30%, transparent)",
   },
   reply_draft: {
     icon: <Wand2 size={14} />,
-    color: "#c4b5fd",
-    bg: "rgba(196,181,253,0.08)",
-    border: "rgba(196,181,253,0.3)",
+    color: "var(--color-accent)",
+    bg: "color-mix(in srgb, var(--color-accent) 8%, transparent)",
+    border: "color-mix(in srgb, var(--color-accent) 30%, transparent)",
   },
-  mark_important: {
-    icon: <Sparkles size={14} />,
-    color: "#fafafa",
-    bg: "rgba(63,63,70,0.15)",
-    border: "#3f3f46",
+  star_email: {
+    icon: <Star size={14} />,
+    color: "var(--color-warning)",
+    bg: "color-mix(in srgb, var(--color-warning) 8%, transparent)",
+    border: "color-mix(in srgb, var(--color-warning) 30%, transparent)",
   },
 };
 
@@ -383,7 +384,7 @@ export default function GmailPage() {
       const prompt = `Analyze the following email and suggest helpful actions. Return a JSON array of actions that would genuinely help the user manage this email.
 
 Each action must have:
-- "type": one of archive, create_event, create_task, add_to_notes, reply_draft, mark_important
+- "type": one of archive, create_event, create_task, add_to_notes, reply_draft, star_email
 - "label": short label (≤6 words)
 - "description": 1-2 sentences explaining what this action will do and why it's useful
 - Optional "payload": object with title, description, dateHint (YYYY-MM-DD), startHint (ISO 8601 datetime e.g. 2024-03-15T14:00:00), endHint (ISO 8601 datetime e.g. 2024-03-15T15:00:00), replyDraft fields as appropriate
@@ -394,7 +395,7 @@ Guidelines:
 - Suggest add_to_notes if the email has useful information to reference later
 - Suggest reply_draft if a reply would be appropriate
 - Suggest archive if the email is informational and doesn't need action
-- Suggest mark_important sparingly - only for truly important emails
+- Suggest star_email sparingly - only for truly important emails worth keeping starred
 
 For create_event actions, extract any dates/times mentioned. Use startHint/endHint for datetime, dateHint for date-only.
 
@@ -432,6 +433,13 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
   }
 
   function executeAction(action: AIAction) {
+    const latestMsg = messages[messages.length - 1];
+    const emailBody = latestMsg
+      ? latestMsg.body.includes("<")
+        ? stripHtml(latestMsg.body)
+        : latestMsg.body
+      : (activeThread?.snippet ?? "");
+
     switch (action.type) {
       case "archive":
         if (activeThread) handleArchive(activeThread.id);
@@ -446,6 +454,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
             dateHint: action.payload?.dateHint,
             startHint: action.payload?.startHint,
             endHint: action.payload?.endHint,
+            emailContext: emailBody || undefined,
           },
         });
         dispatch({ type: "SET_ACTIVE_PAGE", id: "calendar" });
@@ -460,18 +469,13 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
             description:
               action.payload?.description ?? activeThread?.snippet ?? "",
             dueDate: action.payload?.dateHint,
+            emailContext: emailBody || undefined,
           },
         });
         dispatch({ type: "SET_ACTIVE_PAGE", id: "tasks" });
         notify("Navigated to Tasks — task pre-filled", "info");
         break;
       case "add_to_notes": {
-        const latestMsg = messages[messages.length - 1];
-        const emailBody = latestMsg
-          ? latestMsg.body.includes("<")
-            ? stripHtml(latestMsg.body)
-            : latestMsg.body
-          : (activeThread?.snippet ?? "");
         dispatch({
           type: "SET_NOTE_PREFILL",
           prefill: {
@@ -491,8 +495,9 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
             setComposeBody(action.payload.replyDraft);
         }
         break;
-      case "mark_important":
-        notify("Marked as important", "success");
+      case "star_email":
+        if (activeThread)
+          gmail.toggleStar(activeThread.id, !activeThread.starred);
         break;
     }
   }
@@ -506,9 +511,14 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
       return next;
     });
     if (activeThreadId === id) {
-      setActiveThreadId(null);
       aiCacheRef.current.delete(id);
       setAiActions([]);
+      // Advance to the next thread in the list
+      const remaining = gmail.threads.filter((t) => t.id !== id);
+      const currentIdx = gmail.threads.findIndex((t) => t.id === id);
+      const next = remaining[currentIdx] ?? remaining[currentIdx - 1] ?? null;
+      if (next) openThread(next.id);
+      else setActiveThreadId(null);
     }
   }
 
@@ -521,9 +531,13 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
       return next;
     });
     if (activeThreadId === id) {
-      setActiveThreadId(null);
       aiCacheRef.current.delete(id);
       setAiActions([]);
+      const remaining = gmail.threads.filter((t) => t.id !== id);
+      const currentIdx = gmail.threads.findIndex((t) => t.id === id);
+      const next = remaining[currentIdx] ?? remaining[currentIdx - 1] ?? null;
+      if (next) openThread(next.id);
+      else setActiveThreadId(null);
     }
   }
 
@@ -814,9 +828,6 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                           {extractName(t.from)}
                         </span>
                         <div className="flex items-center gap-1 flex-shrink-0 absolute right-2">
-                          <span className="text-xs text-text-3">
-                            {formatDate(t.date)}
-                          </span>
                           <button
                             onClick={(e) => handleArchive(t.id, e)}
                             className="p-1.5 text-text-3 hover:text-success hover:bg-success/10 rounded transition-colors opacity-0 group-hover:opacity-100"
@@ -831,6 +842,26 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                           >
                             <Trash2 size={16} />
                           </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              gmail.toggleStar(t.id, !t.starred);
+                            }}
+                            className={`p-1.5 rounded transition-colors ${
+                              t.starred
+                                ? "text-yellow-400 opacity-100"
+                                : "text-text-3 hover:text-yellow-400 opacity-0 group-hover:opacity-100"
+                            }`}
+                            title={t.starred ? "Unstar" : "Star"}
+                          >
+                            <Star
+                              size={14}
+                              fill={t.starred ? "currentColor" : "none"}
+                            />
+                          </button>
+                          <span className="text-xs text-text-3">
+                            {formatDate(t.date)}
+                          </span>
                         </div>
                       </div>
                       <div
@@ -905,6 +936,23 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button
+                    onClick={() =>
+                      gmail.toggleStar(activeThread.id, !activeThread.starred)
+                    }
+                    style={{ padding: "2px 12px" }}
+                    className={`flex items-center gap-1.5 text-sm font-medium border rounded-lg transition-all ${
+                      activeThread.starred
+                        ? "border-yellow-400/50 text-yellow-400 bg-yellow-400/5"
+                        : "border-border-2 text-text-2 hover:border-yellow-400/50 hover:text-yellow-400"
+                    }`}
+                  >
+                    <Star
+                      size={14}
+                      fill={activeThread.starred ? "currentColor" : "none"}
+                    />
+                    {activeThread.starred ? "Starred" : "Star"}
+                  </button>
+                  <button
                     onClick={() => handleArchive(activeThread.id)}
                     style={{ padding: "2px 12px" }}
                     className="flex items-center gap-1.5 text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:border-success hover:text-success transition-all"
@@ -917,6 +965,17 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                     className="flex items-center gap-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-all"
                   >
                     <Reply size={14} /> Reply
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveThreadId(null);
+                      setMessages([]);
+                      setAiActions([]);
+                    }}
+                    className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
+                    title="Close"
+                  >
+                    <X size={15} />
                   </button>
                 </div>
               </div>

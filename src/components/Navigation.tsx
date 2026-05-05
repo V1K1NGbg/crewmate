@@ -24,13 +24,13 @@ interface AddPageModalState {
   url: string;
 }
 
-// Distinct colors for each page type (inactive state)
+// Colors keyed to theme CSS vars — must stay in sync with ACTION_STYLES in GmailPage
 const PAGE_TYPE_COLORS: Record<string, string> = {
-  mail: "#60a5fa", // blue
-  calendar: "#34d399", // emerald
-  notes: "#fbbf24", // amber
-  tasks: "#f472b6", // pink
-  custom: "", // fallback to theme text-2
+  mail: "var(--color-mail)",
+  calendar: "var(--color-calendar)",
+  notes: "var(--color-notes)",
+  tasks: "var(--color-tasks)",
+  custom: "",
 };
 
 export default function Navigation() {
@@ -46,6 +46,11 @@ export default function Navigation() {
     x: number;
     y: number;
   } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const close = () => setContextMenu(null);
@@ -79,7 +84,7 @@ export default function Navigation() {
       <nav className="flex flex-col items-center py-4 gap-1.5 bg-surface/50 border-r border-border w-16 flex-shrink-0">
         {state.pages.map((page) => {
           const Icon = ICON_MAP[page.icon] ?? Globe;
-          const isActive = state.activePage === page.id;
+          const isActive = mounted && state.activePage === page.id;
           const pageColor = PAGE_TYPE_COLORS[page.type] ?? "";
           const activeColor = pageColor || "var(--color-accent)";
           return (
@@ -109,7 +114,7 @@ export default function Navigation() {
                 isActive
                   ? {
                       color: activeColor,
-                      backgroundColor: `${activeColor}20`,
+                      backgroundColor: `color-mix(in srgb, ${activeColor} 12%, transparent)`,
                     }
                   : pageColor
                     ? { color: pageColor, opacity: 0.7 }

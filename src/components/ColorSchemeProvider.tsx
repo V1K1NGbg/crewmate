@@ -20,6 +20,10 @@ function applyColors(colors: ColorSchemeColors) {
   root.style.setProperty("--color-success", colors.success);
   root.style.setProperty("--color-warning", colors.warning);
   root.style.setProperty("--color-danger", colors.danger);
+  root.style.setProperty("--color-mail", colors.mail);
+  root.style.setProperty("--color-calendar", colors.calendar);
+  root.style.setProperty("--color-notes", colors.notes);
+  root.style.setProperty("--color-tasks", colors.tasks);
 }
 
 export function ColorSchemeProvider({

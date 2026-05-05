@@ -71,6 +71,7 @@ export const DEFAULT_PAGE_SETTINGS: PageSettings = {
     weekStartsOn: 0 as 0 | 1,
     enabledCalendarIds: [] as string[],
     defaultCalendarId: "primary",
+    use24HourTime: false,
   },
   notes: { fontSize: 14, autoSaveDelay: 1000 },
   tasks: { defaultFilter: "all", sortBy: "priority" },

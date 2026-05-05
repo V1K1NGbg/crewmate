@@ -52,8 +52,8 @@ export function useCalendar() {
       summary: string;
       description?: string;
       location?: string;
-      start: { dateTime: string; timeZone?: string };
-      end: { dateTime: string; timeZone?: string };
+      start: { dateTime: string; timeZone?: string } | { date: string };
+      end: { dateTime: string; timeZone?: string } | { date: string };
       calendarId?: string;
     }) => {
       try {
@@ -122,7 +122,14 @@ export function useCalendar() {
     [notify],
   );
 
-  return { events, loading, fetchEvents, createEvent, updateEvent, deleteEvent };
+  return {
+    events,
+    loading,
+    fetchEvents,
+    createEvent,
+    updateEvent,
+    deleteEvent,
+  };
 }
 
 function sortByStart(a: CalendarEvent, b: CalendarEvent) {

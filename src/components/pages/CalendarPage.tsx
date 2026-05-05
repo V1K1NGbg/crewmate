@@ -33,11 +33,15 @@ import {
   parseISO,
   isToday,
   parse,
+  startOfDay,
+  addDays,
+  differenceInCalendarDays,
+  isWithinInterval,
 } from "date-fns";
 import { useApp } from "@/context/AppContext";
 import { useResizable } from "@/lib/useResizable";
 import { useCalendar, type CalendarEvent } from "@/hooks/useCalendar";
-import type { GoogleCalendarList } from "@/types";
+import type { GoogleCalendarList, CalendarEventDateTime } from "@/types";
 
 type ViewMode = "month" | "week";
 
@@ -96,6 +100,8 @@ export default function CalendarPage() {
   const cal = useCalendar();
 
   const weekStartsOn = (state.pageSettings.calendar.weekStartsOn ?? 0) as 0 | 1;
+  const use24h = state.pageSettings.calendar.use24HourTime ?? false;
+  const timeFmtA = use24h ? "H:mm" : "h:mm a";
 
   const [view, setView] = useState<ViewMode>(
     state.pageSettings.calendar.defaultView,
@@ -106,6 +112,8 @@ export default function CalendarPage() {
   );
   const [createOpen, setCreateOpen] = useState(false);
   const [createDate, setCreateDate] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [importPanelOpen, setImportPanelOpen] = useState(false);
 
   // Calendar list for coloring & selector
@@ -182,12 +190,15 @@ export default function CalendarPage() {
   const [formStart, setFormStart] = useState("");
   const [formEnd, setFormEnd] = useState("");
   const [formAllDay, setFormAllDay] = useState(false);
+  const [formEndDate, setFormEndDate] = useState(""); // for all-day multi-day
   const [formDesc, setFormDesc] = useState("");
   const [formLocation, setFormLocation] = useState("");
   const [formCalendarId, setFormCalendarId] = useState(
     state.pageSettings.calendar.defaultCalendarId || "primary",
   );
   const [saving, setSaving] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const prefillEmailContextRef = useRef<string | null>(null);
 
   // Current time line
   const [now, setNow] = useState(new Date());
@@ -203,7 +214,17 @@ export default function CalendarPage() {
     setCreateDate(dateStr);
     setFormTitle(pf.title);
     setFormDesc(pf.description ?? "");
-    if (pf.startHint) {
+    prefillEmailContextRef.current = pf.emailContext ?? null;
+    setFormErrors({});
+
+    // If endDateHint is provided and differs from start → all-day multi-day
+    if (pf.endDateHint && !pf.startHint) {
+      const endDateStr = parseDateHint(pf.endDateHint);
+      setFormAllDay(true);
+      setFormEndDate(endDateStr !== dateStr ? endDateStr : "");
+      setFormStart(`${dateStr}T09:00`);
+      setFormEnd(`${dateStr}T10:00`);
+    } else if (pf.startHint) {
       try {
         const startDt = new Date(pf.startHint);
         if (!isNaN(startDt.getTime())) {
@@ -217,23 +238,26 @@ export default function CalendarPage() {
         setFormStart(`${dateStr}T09:00`);
         setFormAllDay(false);
       }
-    } else {
-      setFormStart(`${dateStr}T09:00`);
-      setFormAllDay(false);
-    }
-    if (pf.endHint) {
-      try {
-        const endDt = new Date(pf.endHint);
-        if (!isNaN(endDt.getTime())) {
-          setFormEnd(format(endDt, "yyyy-MM-dd'T'HH:mm"));
-        } else {
+      setFormEndDate("");
+      if (pf.endHint) {
+        try {
+          const endDt = new Date(pf.endHint);
+          if (!isNaN(endDt.getTime())) {
+            setFormEnd(format(endDt, "yyyy-MM-dd'T'HH:mm"));
+          } else {
+            setFormEnd(`${dateStr}T10:00`);
+          }
+        } catch {
           setFormEnd(`${dateStr}T10:00`);
         }
-      } catch {
+      } else {
         setFormEnd(`${dateStr}T10:00`);
       }
     } else {
+      setFormStart(`${dateStr}T09:00`);
       setFormEnd(`${dateStr}T10:00`);
+      setFormAllDay(false);
+      setFormEndDate("");
     }
     setFormLocation("");
     setFormCalendarId(
@@ -288,6 +312,8 @@ export default function CalendarPage() {
     setFormAllDay(false);
     setFormDesc("");
     setFormLocation("");
+    setFormErrors({});
+    setFormEndDate("");
     setFormCalendarId(
       resolveCalendarId(
         state.pageSettings.calendar.defaultCalendarId || "primary",
@@ -297,21 +323,50 @@ export default function CalendarPage() {
   }
 
   async function handleCreate() {
-    if (!formTitle) return;
+    const errors: Record<string, string> = {};
+    if (!formTitle.trim()) errors.title = "Title is required";
+    if (formAllDay) {
+      if (!createDate) errors.date = "Date is required";
+      if (formEndDate && formEndDate < createDate)
+        errors.endDate = "End date must be on or after start date";
+    } else {
+      if (!formStart) errors.start = "Start time is required";
+      if (!formEnd) errors.end = "End time is required";
+      if (formStart && formEnd && new Date(formEnd) <= new Date(formStart))
+        errors.end = "End must be after start";
+    }
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    setFormErrors({});
     setSaving(true);
     const tz =
       state.pageSettings.calendar.timezone ||
       Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // Append email context to description if present and description is empty
+    const emailCtx = prefillEmailContextRef.current;
+    const finalDesc = formDesc
+      ? formDesc
+      : emailCtx
+        ? `[From email]\n\n${emailCtx.slice(0, 2000)}`
+        : undefined;
+    prefillEmailContextRef.current = null;
+    // For all-day events Google Calendar end date is exclusive, so add 1 day
+    const allDayEnd =
+      formEndDate && formEndDate >= createDate
+        ? format(addDays(parseISO(formEndDate), 1), "yyyy-MM-dd")
+        : format(addDays(parseISO(createDate), 1), "yyyy-MM-dd");
     await cal.createEvent({
       summary: formTitle,
-      description: formDesc || undefined,
+      description: finalDesc || undefined,
       location: formLocation || undefined,
       calendarId: formCalendarId || "primary",
       start: formAllDay
-        ? { dateTime: createDate, timeZone: tz }
+        ? { date: createDate }
         : { dateTime: new Date(formStart).toISOString(), timeZone: tz },
       end: formAllDay
-        ? { dateTime: createDate, timeZone: tz }
+        ? { date: allDayEnd }
         : { dateTime: new Date(formEnd).toISOString(), timeZone: tz },
     });
     setSaving(false);
@@ -321,6 +376,97 @@ export default function CalendarPage() {
   async function handleDelete(id: string) {
     await cal.deleteEvent(id);
     setSelectedEvent(null);
+  }
+
+  function openEdit(ev: CalendarEvent) {
+    setEditingEvent(ev);
+    setFormTitle(ev.summary ?? "");
+    setFormDesc(ev.description ?? "");
+    setFormLocation(ev.location ?? "");
+    setFormCalendarId(
+      ev.calendarId ??
+        resolveCalendarId(
+          state.pageSettings.calendar.defaultCalendarId || "primary",
+        ),
+    );
+    setFormErrors({});
+    if (ev.start.dateTime) {
+      setFormAllDay(false);
+      setFormStart(format(parseISO(ev.start.dateTime), "yyyy-MM-dd'T'HH:mm"));
+      setFormEnd(
+        format(
+          parseISO(ev.end.dateTime ?? ev.start.dateTime),
+          "yyyy-MM-dd'T'HH:mm",
+        ),
+      );
+      setCreateDate(format(parseISO(ev.start.dateTime), "yyyy-MM-dd"));
+      setFormEndDate("");
+    } else {
+      setFormAllDay(true);
+      const startDate = ev.start.date ?? "";
+      // Google end date is exclusive — show inclusive end to user
+      const endDateExclusive = ev.end.date ?? startDate;
+      const endDateInclusive = format(
+        addDays(parseISO(endDateExclusive), -1),
+        "yyyy-MM-dd",
+      );
+      setCreateDate(startDate);
+      setFormEndDate(endDateInclusive !== startDate ? endDateInclusive : "");
+      setFormStart(`${startDate}T09:00`);
+      setFormEnd(`${startDate}T10:00`);
+    }
+    setEditOpen(true);
+  }
+
+  async function handleUpdate() {
+    if (!editingEvent) return;
+    const errors: Record<string, string> = {};
+    if (!formTitle.trim()) errors.title = "Title is required";
+    if (formAllDay) {
+      if (!createDate) errors.date = "Date is required";
+      if (formEndDate && formEndDate < createDate)
+        errors.endDate = "End date must be on or after start date";
+    } else {
+      if (!formStart) errors.start = "Start time is required";
+      if (!formEnd) errors.end = "End time is required";
+      if (formStart && formEnd && new Date(formEnd) <= new Date(formStart))
+        errors.end = "End must be after start";
+    }
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    setFormErrors({});
+    setSaving(true);
+    const tz =
+      state.pageSettings.calendar.timezone ||
+      Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const allDayEnd =
+      formEndDate && formEndDate >= createDate
+        ? format(addDays(parseISO(formEndDate), 1), "yyyy-MM-dd")
+        : format(addDays(parseISO(createDate), 1), "yyyy-MM-dd");
+    const patch: Partial<CalendarEvent> = {
+      summary: formTitle,
+      description: formDesc || undefined,
+      location: formLocation || undefined,
+      start: (formAllDay
+        ? { date: createDate }
+        : {
+            dateTime: new Date(formStart).toISOString(),
+            timeZone: tz,
+          }) as CalendarEventDateTime,
+      end: (formAllDay
+        ? { date: allDayEnd }
+        : {
+            dateTime: new Date(formEnd).toISOString(),
+            timeZone: tz,
+          }) as CalendarEventDateTime,
+    };
+    const updated = await cal.updateEvent(editingEvent.id, patch);
+    setSaving(false);
+    setEditOpen(false);
+    setEditingEvent(null);
+    if (updated) setSelectedEvent(updated);
   }
 
   function importFromTask(task: {
@@ -381,13 +527,30 @@ export default function CalendarPage() {
       : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   function eventsOnDay(day: Date): CalendarEvent[] {
+    const dayStart = startOfDay(day);
+    const dayEnd = addDays(dayStart, 1);
     return cal.events.filter((e) => {
       try {
-        return isSameDay(eventStart(e), day);
+        const s = eventStart(e);
+        const end = eventEnd(e);
+        // Event overlaps this day if it starts before end-of-day and ends after start-of-day
+        return s < dayEnd && end > dayStart;
       } catch {
         return false;
       }
     });
+  }
+
+  // Returns true if an event spans more than one calendar day
+  function isMultiDay(e: CalendarEvent): boolean {
+    try {
+      return (
+        differenceInCalendarDays(eventEnd(e), eventStart(e)) >
+        (e.start.dateTime ? 0 : 1)
+      );
+    } catch {
+      return false;
+    }
   }
 
   // Current time position in the week grid (pixels, 56px per hour)
@@ -458,6 +621,75 @@ export default function CalendarPage() {
     }
 
     return layout;
+  }
+
+  // Compute layout rows for all-day/multi-day events across a set of days.
+  // Returns: array of { ev, startCol, endCol (exclusive), row }
+  function computeAllDayLayout(
+    days: Date[],
+    events: CalendarEvent[],
+  ): Array<{
+    ev: CalendarEvent;
+    startCol: number;
+    endCol: number;
+    row: number;
+  }> {
+    const result: Array<{
+      ev: CalendarEvent;
+      startCol: number;
+      endCol: number;
+      row: number;
+    }> = [];
+    // Deduplicate: only process each event once
+    const seen = new Set<string>();
+    // Sort by start time, then by duration descending so longer events get row priority
+    const sorted = [...events].sort((a, b) => {
+      const startDiff = eventStart(a).getTime() - eventStart(b).getTime();
+      if (startDiff !== 0) return startDiff;
+      return eventEnd(b).getTime() - eventEnd(a).getTime();
+    });
+    const rows: number[][] = []; // rows[r] = array of endCol values of events placed in that row
+
+    for (const ev of sorted) {
+      if (seen.has(ev.id)) continue;
+      seen.add(ev.id);
+
+      const evStart = startOfDay(eventStart(ev));
+      // For timed events, end is inclusive so add 1 day to make it exclusive like all-day events
+      const evEnd = ev.start.dateTime
+        ? addDays(startOfDay(eventEnd(ev)), 1)
+        : startOfDay(eventEnd(ev));
+
+      // Find which columns this event occupies in this week
+      let startCol = days.findIndex((d) => startOfDay(d) >= evStart);
+      if (startCol === -1) startCol = 0;
+
+      // endCol: first day index where day >= evEnd (exclusive)
+      let endCol = days.findIndex((d) => startOfDay(d) >= evEnd);
+      if (endCol === -1) endCol = days.length;
+      endCol = Math.min(endCol, days.length);
+      // Skip events that don't actually occupy any column in this week
+      if (endCol <= startCol) continue;
+
+      // Find a row where this event fits (no overlap in [startCol, endCol))
+      let row = 0;
+      while (true) {
+        if (!rows[row]) {
+          rows[row] = [];
+          break;
+        }
+        // Check if any event in this row overlaps [startCol, endCol)
+        const conflicts = result.filter(
+          (r) => r.row === row && r.startCol < endCol && r.endCol > startCol,
+        );
+        if (conflicts.length === 0) break;
+        row++;
+      }
+      if (!rows[row]) rows[row] = [];
+
+      result.push({ ev, startCol, endCol, row });
+    }
+    return result;
   }
 
   return (
@@ -565,52 +797,230 @@ export default function CalendarPage() {
                   </div>
                 ))}
               </div>
-              <div
-                className="flex-1 grid grid-cols-7 overflow-y-auto"
-                style={{
-                  gridTemplateRows: `repeat(${days.length / 7}, minmax(100px, 1fr))`,
-                }}
-              >
-                {days.map((day) => {
-                  const dayEvents = eventsOnDay(day);
-                  const inMonth = isSameMonth(day, cursor);
-                  const today = isToday(day);
+              <div className="flex-1 flex flex-col overflow-y-auto">
+                {Array.from({ length: days.length / 7 }, (_, wi) => {
+                  const weekRow = days.slice(wi * 7, wi * 7 + 7);
+                  const allDayInRow = cal.events.filter(
+                    (e) =>
+                      !e.start.dateTime &&
+                      weekRow.some((d) => {
+                        try {
+                          const s = startOfDay(eventStart(e));
+                          const en = startOfDay(eventEnd(e));
+                          const ds = startOfDay(d);
+                          return ds >= s && ds < en;
+                        } catch {
+                          return false;
+                        }
+                      }),
+                  );
+                  const timedInRow = cal.events.filter(
+                    (e) =>
+                      e.start.dateTime &&
+                      weekRow.some((d) => {
+                        try {
+                          const s = startOfDay(eventStart(e));
+                          const en = startOfDay(eventEnd(e));
+                          const ds = startOfDay(d);
+                          // For timed events, en may equal s for same-day events, so use <=
+                          return ds >= s && ds <= en;
+                        } catch {
+                          return false;
+                        }
+                      }),
+                  );
+                  const multiDayTimed = timedInRow.filter(isMultiDay);
+                  const allSpanning = [...allDayInRow, ...multiDayTimed];
+                  const combinedLayout = computeAllDayLayout(
+                    weekRow,
+                    allSpanning,
+                  );
+                  const spanLayout = combinedLayout.filter(
+                    (l) => !l.ev.start.dateTime,
+                  );
+                  const timedSpanLayout = combinedLayout.filter(
+                    (l) => !!l.ev.start.dateTime,
+                  );
+                  const spanRows =
+                    combinedLayout.length > 0
+                      ? Math.max(...combinedLayout.map((l) => l.row)) + 1
+                      : 0;
+                  const ROW_H = 20;
+                  const CELL_TOP = 28; // space for day number
+                  const spanAreaH = spanRows * ROW_H;
+
                   return (
                     <div
-                      key={day.toISOString()}
-                      onClick={() => openCreate(format(day, "yyyy-MM-dd"))}
-                      className={`border-r border-b border-border/50 p-1.5 cursor-pointer transition-colors hover:bg-surface ${!inMonth ? "opacity-30" : ""}`}
+                      key={`week-${wi}`}
+                      className="relative grid grid-cols-7 border-b border-border/50 flex-1 min-h-[120px]"
                     >
-                      <div
-                        className={`w-6 h-6 flex items-center justify-center rounded-full text-xs mb-1 font-medium ${today ? "bg-accent text-text font-bold" : "text-text-2"}`}
-                      >
-                        {format(day, "d")}
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        {dayEvents.map((ev) => (
+                      {/* Separator + tone shift between spanning pills and timed events */}
+                      {spanRows > 0 && (
+                        <>
+                          <div
+                            className="absolute left-0 right-0 top-0 pointer-events-none bg-surface/80"
+                            style={{ height: CELL_TOP + spanAreaH }}
+                          />
+                          <div
+                            className="absolute left-0 right-0 border-t border-border/50 pointer-events-none"
+                            style={{ top: CELL_TOP + spanAreaH }}
+                          />
+                        </>
+                      )}
+                      {/* Day cells (background + day number + timed events) */}
+                      {weekRow.map((day) => {
+                        const inMonth = isSameMonth(day, cursor);
+                        const today = isToday(day);
+                        const timedDay = timedInRow.filter((e) => {
+                          try {
+                            const s = startOfDay(eventStart(e));
+                            const en = startOfDay(eventEnd(e));
+                            const ds = startOfDay(day);
+                            return ds >= s && ds <= en;
+                          } catch {
+                            return false;
+                          }
+                        });
+                        return (
+                          <div
+                            key={day.toISOString()}
+                            onClick={() =>
+                              openCreate(format(day, "yyyy-MM-dd"))
+                            }
+                            className={`border-r border-border/50 p-1.5 cursor-pointer transition-colors hover:bg-surface ${!inMonth ? "opacity-30" : ""}`}
+                            style={{ paddingTop: CELL_TOP + spanAreaH + 4 }}
+                          >
+                            {/* Timed events (single-day only shown here) */}
+                            <div className="flex flex-col gap-0.5">
+                              {timedDay
+                                .filter((e) => !isMultiDay(e))
+                                .map((ev) => (
+                                  <button
+                                    key={ev.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedEvent(ev);
+                                    }}
+                                    className="w-full text-left text-xs px-1.5 py-0.5 rounded truncate font-medium transition-opacity hover:opacity-80"
+                                    style={{
+                                      backgroundColor: eventColor(ev) + "28",
+                                      color: eventColor(ev),
+                                      borderLeft: `2px solid ${eventColor(ev)}`,
+                                    }}
+                                  >
+                                    <span className="opacity-70 mr-1">
+                                      {format(eventStart(ev), timeFmtA)}
+                                      {"–"}
+                                      {format(eventEnd(ev), timeFmtA)}
+                                    </span>
+                                    {ev.summary}
+                                  </button>
+                                ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {/* Day number overlay */}
+                      {weekRow.map((day, ci) => {
+                        const today = isToday(day);
+                        return (
+                          <div
+                            key={`dn-${day.toISOString()}`}
+                            className="absolute pointer-events-none"
+                            style={{
+                              top: 6,
+                              left: `calc(${(ci / 7) * 100}% + 6px)`,
+                            }}
+                          >
+                            <div
+                              className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium ${today ? "bg-accent text-text font-bold" : "text-text-2"}`}
+                            >
+                              {format(day, "d")}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {/* All-day spanning pills */}
+                      {spanLayout.map(({ ev, startCol, endCol, row }) => {
+                        const color = eventColor(ev);
+                        const colW = 100 / 7;
+                        const startsInView =
+                          startOfDay(eventStart(ev)) >= startOfDay(weekRow[0]);
+                        const endsInView =
+                          startOfDay(eventEnd(ev)) <=
+                          startOfDay(addDays(weekRow[6], 1));
+                        return (
                           <button
                             key={ev.id}
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedEvent(ev);
                             }}
-                            className="w-full text-left text-xs px-1.5 py-0.5 rounded truncate font-medium transition-opacity hover:opacity-80"
+                            className="absolute text-left text-xs px-1.5 font-medium transition-opacity hover:opacity-80 truncate pointer-events-auto"
                             style={{
-                              backgroundColor: eventColor(ev) + "28",
-                              color: eventColor(ev),
-                              borderLeft: `2px solid ${eventColor(ev)}`,
+                              top: CELL_TOP + row * ROW_H,
+                              height: ROW_H - 2,
+                              left: `calc(${startCol * colW}% + 2px)`,
+                              right: `calc(${(7 - endCol) * colW}% + 2px)`,
+                              backgroundColor: color + "28",
+                              color,
+                              borderLeft: startsInView
+                                ? `2px solid ${color}`
+                                : "none",
+                              borderRadius: `${startsInView ? 4 : 0}px ${endsInView ? 4 : 0}px ${endsInView ? 4 : 0}px ${startsInView ? 4 : 0}px`,
+                              lineHeight: `${ROW_H - 2}px`,
                             }}
                           >
-                            {ev.start.dateTime && (
-                              <span className="opacity-70 mr-1">
-                                {format(eventStart(ev), "h:mm")}–
-                                {format(eventEnd(ev), "h:mm")}
-                              </span>
-                            )}
                             {ev.summary}
                           </button>
-                        ))}
-                      </div>
+                        );
+                      })}
+                      {/* Multi-day timed spanning pills */}
+                      {timedSpanLayout.map(({ ev, startCol, endCol, row }) => {
+                        const color = eventColor(ev);
+                        const colW = 100 / 7;
+                        const startsInView =
+                          startOfDay(eventStart(ev)) >= startOfDay(weekRow[0]);
+                        const endsInView =
+                          startOfDay(eventEnd(ev)) <=
+                          startOfDay(addDays(weekRow[6], 1));
+                        return (
+                          <button
+                            key={`mt-${ev.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedEvent(ev);
+                            }}
+                            className="absolute text-left text-xs px-1.5 font-medium transition-opacity hover:opacity-80 truncate pointer-events-auto"
+                            style={{
+                              top: CELL_TOP + row * ROW_H,
+                              height: ROW_H - 2,
+                              left: `calc(${startCol * colW}% + 2px)`,
+                              right: `calc(${(7 - endCol) * colW}% + 2px)`,
+                              backgroundColor: color + "38",
+                              color,
+                              borderLeft: startsInView
+                                ? `3px solid ${color}`
+                                : "none",
+                              borderRadius: `${startsInView ? 4 : 0}px ${endsInView ? 4 : 0}px ${endsInView ? 4 : 0}px ${startsInView ? 4 : 0}px`,
+                              lineHeight: `${ROW_H - 2}px`,
+                            }}
+                          >
+                            {startsInView ? (
+                              <>
+                                <span className="opacity-70 mr-1">
+                                  {format(eventStart(ev), timeFmtA)}
+                                  {"–"}
+                                  {format(eventEnd(ev), timeFmtA)}
+                                </span>
+                                {ev.summary}
+                              </>
+                            ) : (
+                              ev.summary
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -642,46 +1052,128 @@ export default function CalendarPage() {
                   </div>
                 ))}
               </div>
-              {weekDays.some((day) =>
-                eventsOnDay(day).some((e) => !e.start.dateTime),
-              ) && (
-                <div
-                  className="grid border-b border-border bg-bg"
-                  style={{
-                    gridTemplateColumns: "60px repeat(7, 1fr)",
-                  }}
-                >
-                  <div className="flex items-center justify-end pr-3 text-xs text-text-3 font-medium py-1.5">
-                    all-day
-                  </div>
-                  {weekDays.map((day) => {
-                    const allDayEvents = eventsOnDay(day).filter(
-                      (e) => !e.start.dateTime,
-                    );
-                    return (
+              {(() => {
+                const allDayEventsInWeek = cal.events.filter(
+                  (e) =>
+                    !e.start.dateTime &&
+                    weekDays.some((d) => {
+                      try {
+                        const s = startOfDay(eventStart(e));
+                        const en = startOfDay(eventEnd(e));
+                        const ds = startOfDay(d);
+                        return ds >= s && ds < en;
+                      } catch {
+                        return false;
+                      }
+                    }),
+                );
+                const multiDayTimedInWeek = cal.events.filter(
+                  (e) =>
+                    !!e.start.dateTime &&
+                    isMultiDay(e) &&
+                    weekDays.some((d) => {
+                      try {
+                        const s = startOfDay(eventStart(e));
+                        const en = addDays(startOfDay(eventEnd(e)), 1);
+                        const ds = startOfDay(d);
+                        return ds >= s && ds < en;
+                      } catch {
+                        return false;
+                      }
+                    }),
+                );
+                const allSpanning = [
+                  ...allDayEventsInWeek,
+                  ...multiDayTimedInWeek,
+                ];
+                if (allSpanning.length === 0) return null;
+                const layout = computeAllDayLayout(weekDays, allSpanning);
+                const numRows =
+                  layout.length > 0
+                    ? Math.max(...layout.map((l) => l.row)) + 1
+                    : 1;
+                const ROW_H = 22; // px per row
+                const PAD = 6; // top+bottom padding
+                return (
+                  <div
+                    className="border-b border-border bg-bg flex"
+                    style={{ minHeight: ROW_H * numRows + PAD * 2 }}
+                  >
+                    <div
+                      className="flex items-start justify-end pr-3 text-xs text-text-3 font-medium flex-shrink-0"
+                      style={{ width: 60, paddingTop: PAD }}
+                    >
+                      all-day
+                    </div>
+                    {/* 7-column grid for borders */}
+                    <div
+                      className="flex-1 relative"
+                      style={{ paddingTop: PAD, paddingBottom: PAD }}
+                    >
+                      {/* Column border lines */}
                       <div
-                        key={`ad-${day.toISOString()}`}
-                        className="border-l border-border px-1 py-1.5 flex flex-col gap-0.5"
+                        className="absolute inset-0 grid pointer-events-none"
+                        style={{ gridTemplateColumns: "repeat(7, 1fr)" }}
                       >
-                        {allDayEvents.map((ev) => (
+                        {weekDays.map((d) => (
+                          <div
+                            key={d.toISOString()}
+                            className="border-l border-border h-full"
+                          />
+                        ))}
+                      </div>
+                      {/* Spanning event pills */}
+                      {layout.map(({ ev, startCol, endCol, row }) => {
+                        const color = eventColor(ev);
+                        const colW = 100 / 7;
+                        const left = `calc(${startCol * colW}% + 2px)`;
+                        const right = `calc(${(7 - endCol) * colW}% + 2px)`;
+                        const top = PAD + row * ROW_H;
+                        const startsInView =
+                          startOfDay(eventStart(ev)) >= startOfDay(weekDays[0]);
+                        const endsInView =
+                          startOfDay(eventEnd(ev)) <=
+                          startOfDay(addDays(weekDays[6], 1));
+                        const isTimed = !!ev.start.dateTime;
+                        return (
                           <button
                             key={ev.id}
                             onClick={() => setSelectedEvent(ev)}
-                            className="w-full text-left text-xs px-1.5 py-0.5 rounded truncate font-medium transition-opacity hover:opacity-80"
+                            className="absolute text-left text-xs px-1.5 font-medium transition-opacity hover:opacity-80 truncate"
                             style={{
-                              backgroundColor: eventColor(ev) + "28",
-                              color: eventColor(ev),
-                              borderLeft: `2px solid ${eventColor(ev)}`,
+                              top,
+                              height: ROW_H - 2,
+                              left,
+                              right,
+                              backgroundColor: color + (isTimed ? "38" : "28"),
+                              color,
+                              borderLeft: startsInView
+                                ? `2px solid ${color}`
+                                : "none",
+                              borderRight: endsInView ? undefined : "none",
+                              borderRadius: `${startsInView ? 4 : 0}px ${endsInView ? 4 : 0}px ${endsInView ? 4 : 0}px ${startsInView ? 4 : 0}px`,
+                              lineHeight: `${ROW_H - 2}px`,
                             }}
                           >
-                            {ev.summary}
+                            {isTimed && startsInView ? (
+                              <>
+                                <span className="opacity-70 mr-1">
+                                  {format(eventStart(ev), timeFmtA)}
+                                  {"–"}
+                                  {format(eventEnd(ev), timeFmtA)}
+                                </span>
+                                {ev.summary}
+                              </>
+                            ) : (
+                              ev.summary
+                            )}
                           </button>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="flex-1 overflow-y-auto">
                 <div
                   className="grid"
@@ -696,13 +1188,15 @@ export default function CalendarPage() {
                         style={{ height: 56 }}
                         className="flex items-start justify-end pr-3 pt-1 text-xs text-text-3 font-medium"
                       >
-                        {h === 0 ? "" : format(new Date(2000, 0, 1, h), "h a")}
+                        {h === 0
+                          ? ""
+                          : format(new Date(2000, 0, 1, h), timeFmtA)}
                       </div>
                     ))}
                   </div>
                   {weekDays.map((day) => {
                     const dayEvents = eventsOnDay(day).filter(
-                      (e) => e.start.dateTime,
+                      (e) => e.start.dateTime && !isMultiDay(e),
                     );
                     const overlapLayout = computeOverlapLayout(dayEvents);
                     const todayCol = isToday(day);
@@ -790,8 +1284,8 @@ export default function CalendarPage() {
                                 {ev.summary}
                               </div>
                               <div className="truncate opacity-70 text-xs">
-                                {format(eventStart(ev), "h:mm a")} –{" "}
-                                {format(eventEnd(ev), "h:mm a")}
+                                {format(eventStart(ev), timeFmtA)} –{" "}
+                                {format(eventEnd(ev), timeFmtA)}
                               </div>
                               {ev.location && height > 40 && (
                                 <div className="truncate opacity-60 text-xs">
@@ -934,8 +1428,10 @@ export default function CalendarPage() {
               <Clock size={14} className="flex-shrink-0 mt-0.5 text-text-3" />
               <div className="leading-relaxed">
                 {selectedEvent.start.dateTime
-                  ? `${format(eventStart(selectedEvent), "EEE, MMM d · h:mm a")} – ${format(eventEnd(selectedEvent), "h:mm a")}`
-                  : format(eventStart(selectedEvent), "EEEE, MMMM d")}
+                  ? `${format(eventStart(selectedEvent), `EEE, MMM d · ${timeFmtA}`)} – ${format(eventEnd(selectedEvent), timeFmtA)}`
+                  : isMultiDay(selectedEvent)
+                    ? `${format(eventStart(selectedEvent), "EEE, MMM d")} – ${format(addDays(eventEnd(selectedEvent), -1), "EEE, MMM d")}`
+                    : format(eventStart(selectedEvent), "EEEE, MMMM d")}
               </div>
             </div>
             {selectedEvent.location && (
@@ -973,7 +1469,14 @@ export default function CalendarPage() {
               </div>
             )}
           </div>
-          <div className="px-5 pb-5">
+          <div className="px-5 pb-5 flex flex-col gap-2">
+            <button
+              onClick={() => openEdit(selectedEvent)}
+              style={{ padding: "2px 12px" }}
+              className="w-full text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:bg-surface-2 hover:text-text transition-all"
+            >
+              Edit event
+            </button>
             <button
               onClick={() => handleDelete(selectedEvent.id)}
               style={{ padding: "2px 12px" }}
@@ -1008,7 +1511,9 @@ export default function CalendarPage() {
                     New Event
                   </span>
                   <span className="text-xs text-text-3">
-                    {format(new Date(createDate + "T00:00"), "EEEE, MMMM d")}
+                    {formAllDay && formEndDate && formEndDate > createDate
+                      ? `${format(new Date(createDate + "T00:00"), "MMM d")} – ${format(new Date(formEndDate + "T00:00"), "MMM d")}`
+                      : format(new Date(createDate + "T00:00"), "EEEE, MMMM d")}
                   </span>
                 </div>
               </div>
@@ -1021,16 +1526,27 @@ export default function CalendarPage() {
             </div>
             <div className="flex flex-col gap-4 px-6 py-5">
               {/* Title */}
-              <input
-                autoFocus
-                className="w-full bg-transparent border-b border-border-2 px-0 py-2 text-base font-semibold text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
-                placeholder="Add a title..."
-                value={formTitle}
-                onChange={(e) => setFormTitle(e.target.value)}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && !saving && formTitle && handleCreate()
-                }
-              />
+              <div className="flex flex-col gap-1">
+                <input
+                  autoFocus
+                  className={`w-full bg-transparent border-b px-0 py-2 text-base font-semibold text-text outline-none placeholder:text-text-3 transition-colors ${formErrors.title ? "border-danger" : "border-border-2 focus:border-accent"}`}
+                  placeholder="Add a title..."
+                  value={formTitle}
+                  onChange={(e) => {
+                    setFormTitle(e.target.value);
+                    if (formErrors.title)
+                      setFormErrors((p) => ({ ...p, title: "" }));
+                  }}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" && !saving && handleCreate()
+                  }
+                />
+                {formErrors.title && (
+                  <span className="text-xs text-danger">
+                    {formErrors.title}
+                  </span>
+                )}
+              </div>
 
               {/* All day toggle */}
               <div className="flex items-center justify-between">
@@ -1048,7 +1564,51 @@ export default function CalendarPage() {
               </div>
 
               {/* Date/time */}
-              {!formAllDay && (
+              {formAllDay ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
+                      Start date
+                    </label>
+                    <input
+                      type="date"
+                      value={createDate}
+                      onChange={(e) => {
+                        setCreateDate(e.target.value);
+                        if (formErrors.date)
+                          setFormErrors((p) => ({ ...p, date: "" }));
+                      }}
+                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.date ? "border-danger" : "border-border-2 focus:border-accent"}`}
+                    />
+                    {formErrors.date && (
+                      <span className="text-xs text-danger">
+                        {formErrors.date}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
+                      End date
+                    </label>
+                    <input
+                      type="date"
+                      value={formEndDate || createDate}
+                      min={createDate}
+                      onChange={(e) => {
+                        setFormEndDate(e.target.value);
+                        if (formErrors.endDate)
+                          setFormErrors((p) => ({ ...p, endDate: "" }));
+                      }}
+                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.endDate ? "border-danger" : "border-border-2 focus:border-accent"}`}
+                    />
+                    {formErrors.endDate && (
+                      <span className="text-xs text-danger">
+                        {formErrors.endDate}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
@@ -1057,9 +1617,18 @@ export default function CalendarPage() {
                     <input
                       type="datetime-local"
                       value={formStart}
-                      onChange={(e) => setFormStart(e.target.value)}
-                      className="w-full bg-bg border border-border-2 rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-accent transition-colors"
+                      onChange={(e) => {
+                        setFormStart(e.target.value);
+                        if (formErrors.start)
+                          setFormErrors((p) => ({ ...p, start: "" }));
+                      }}
+                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.start ? "border-danger" : "border-border-2 focus:border-accent"}`}
                     />
+                    {formErrors.start && (
+                      <span className="text-xs text-danger">
+                        {formErrors.start}
+                      </span>
+                    )}
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
@@ -1068,9 +1637,18 @@ export default function CalendarPage() {
                     <input
                       type="datetime-local"
                       value={formEnd}
-                      onChange={(e) => setFormEnd(e.target.value)}
-                      className="w-full bg-bg border border-border-2 rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-accent transition-colors"
+                      onChange={(e) => {
+                        setFormEnd(e.target.value);
+                        if (formErrors.end)
+                          setFormErrors((p) => ({ ...p, end: "" }));
+                      }}
+                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.end ? "border-danger" : "border-border-2 focus:border-accent"}`}
                     />
+                    {formErrors.end && (
+                      <span className="text-xs text-danger">
+                        {formErrors.end}
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
@@ -1139,7 +1717,7 @@ export default function CalendarPage() {
                 </button>
                 <button
                   onClick={handleCreate}
-                  disabled={saving || !formTitle}
+                  disabled={saving}
                   style={{ padding: "2px 12px" }}
                   className="flex-1 text-sm font-semibold text-white bg-accent rounded-lg hover:bg-accent-hover transition-all disabled:opacity-40 flex items-center justify-center gap-2"
                 >
@@ -1149,6 +1727,261 @@ export default function CalendarPage() {
                     <Plus size={14} />
                   )}
                   {saving ? "Saving..." : "Create event"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit event modal */}
+      {editOpen && editingEvent && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => {
+            setEditOpen(false);
+            setEditingEvent(null);
+          }}
+        >
+          <div
+            className="bg-surface border border-border-2 rounded-xl w-full max-w-[500px] shadow-2xl overflow-hidden"
+            style={{ animation: "slideUpLocal 0.18s ease-out both" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-8 h-8 rounded-lg flex items-center justify-center"
+                  style={{
+                    backgroundColor: eventColor(editingEvent) + "20",
+                    border: `1px solid ${eventColor(editingEvent)}40`,
+                  }}
+                >
+                  <CalIcon
+                    size={15}
+                    style={{ color: eventColor(editingEvent) }}
+                  />
+                </div>
+                <span className="text-sm font-semibold text-text">
+                  Edit Event
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setEditOpen(false);
+                  setEditingEvent(null);
+                }}
+                className="text-text-3 hover:text-text p-1.5 rounded-lg hover:bg-surface-2 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="flex flex-col gap-4 px-6 py-5">
+              {/* Title */}
+              <div className="flex flex-col gap-1">
+                <input
+                  autoFocus
+                  className={`w-full bg-transparent border-b px-0 py-2 text-base font-semibold text-text outline-none placeholder:text-text-3 transition-colors ${formErrors.title ? "border-danger" : "border-border-2 focus:border-accent"}`}
+                  placeholder="Event title..."
+                  value={formTitle}
+                  onChange={(e) => {
+                    setFormTitle(e.target.value);
+                    if (formErrors.title)
+                      setFormErrors((p) => ({ ...p, title: "" }));
+                  }}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" && !saving && handleUpdate()
+                  }
+                />
+                {formErrors.title && (
+                  <span className="text-xs text-danger">
+                    {formErrors.title}
+                  </span>
+                )}
+              </div>
+
+              {/* All day toggle */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-text-2">All day</span>
+                <button
+                  type="button"
+                  onClick={() => setFormAllDay((v) => !v)}
+                  className={`relative rounded-full transition-colors ${formAllDay ? "bg-accent" : "bg-border-2"}`}
+                  style={{ height: 22, width: 40 }}
+                >
+                  <div
+                    className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${formAllDay ? "translate-x-[19px]" : "translate-x-[3px]"}`}
+                  />
+                </button>
+              </div>
+
+              {/* Date/time */}
+              {formAllDay ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
+                      Start date
+                    </label>
+                    <input
+                      type="date"
+                      value={createDate}
+                      onChange={(e) => {
+                        setCreateDate(e.target.value);
+                        if (formErrors.date)
+                          setFormErrors((p) => ({ ...p, date: "" }));
+                      }}
+                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.date ? "border-danger" : "border-border-2 focus:border-accent"}`}
+                    />
+                    {formErrors.date && (
+                      <span className="text-xs text-danger">
+                        {formErrors.date}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
+                      End date
+                    </label>
+                    <input
+                      type="date"
+                      value={formEndDate || createDate}
+                      min={createDate}
+                      onChange={(e) => {
+                        setFormEndDate(e.target.value);
+                        if (formErrors.endDate)
+                          setFormErrors((p) => ({ ...p, endDate: "" }));
+                      }}
+                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.endDate ? "border-danger" : "border-border-2 focus:border-accent"}`}
+                    />
+                    {formErrors.endDate && (
+                      <span className="text-xs text-danger">
+                        {formErrors.endDate}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
+                      Start
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={formStart}
+                      onChange={(e) => {
+                        setFormStart(e.target.value);
+                        if (formErrors.start)
+                          setFormErrors((p) => ({ ...p, start: "" }));
+                      }}
+                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.start ? "border-danger" : "border-border-2 focus:border-accent"}`}
+                    />
+                    {formErrors.start && (
+                      <span className="text-xs text-danger">
+                        {formErrors.start}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
+                      End
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={formEnd}
+                      onChange={(e) => {
+                        setFormEnd(e.target.value);
+                        if (formErrors.end)
+                          setFormErrors((p) => ({ ...p, end: "" }));
+                      }}
+                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.end ? "border-danger" : "border-border-2 focus:border-accent"}`}
+                    />
+                    {formErrors.end && (
+                      <span className="text-xs text-danger">
+                        {formErrors.end}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Location */}
+              <div className="flex flex-col gap-1">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-text-3 uppercase tracking-widest">
+                  <MapPin size={11} /> Location
+                </label>
+                <input
+                  className="w-full bg-bg border border-border-2 rounded-lg px-3 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
+                  placeholder="Add location"
+                  value={formLocation}
+                  onChange={(e) => setFormLocation(e.target.value)}
+                />
+              </div>
+
+              {/* Description */}
+              <div className="flex flex-col gap-1">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-text-3 uppercase tracking-widest">
+                  <AlignLeft size={11} /> Description
+                </label>
+                <textarea
+                  className="w-full bg-bg border border-border-2 rounded-lg px-3 py-2.5 text-sm text-text outline-none focus:border-accent resize-none placeholder:text-text-3 transition-colors leading-relaxed"
+                  placeholder="Add description"
+                  rows={3}
+                  value={formDesc}
+                  onChange={(e) => setFormDesc(e.target.value)}
+                />
+              </div>
+
+              {/* Calendar selector */}
+              {calendarList.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-text-3 uppercase tracking-widest">
+                    <CalIcon size={11} /> Calendar
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={formCalendarId}
+                      onChange={(e) => setFormCalendarId(e.target.value)}
+                      className="w-full appearance-none bg-bg border border-border-2 rounded-lg px-3 py-2.5 text-sm text-text outline-none focus:border-accent transition-colors pr-8 cursor-pointer"
+                    >
+                      {calendarList.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.summary}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown
+                      size={13}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => {
+                    setEditOpen(false);
+                    setEditingEvent(null);
+                  }}
+                  style={{ padding: "2px 12px" }}
+                  className="flex-1 text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:bg-surface-2 hover:text-text transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdate}
+                  disabled={saving}
+                  style={{ padding: "2px 12px" }}
+                  className="flex-1 text-sm font-semibold text-white bg-accent rounded-lg hover:bg-accent-hover transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                >
+                  {saving ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <CalIcon size={14} />
+                  )}
+                  {saving ? "Saving..." : "Save changes"}
                 </button>
               </div>
             </div>

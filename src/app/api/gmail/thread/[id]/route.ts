@@ -1,11 +1,7 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import { isAuthError } from "@/lib/googleApiError";
-import {
-  getGmailClient,
-  decodeGmailBody,
-  getGmailHeader,
-} from "@/lib/google";
+import { getGmailClient, decodeGmailBody, getGmailHeader } from "@/lib/google";
 
 export async function GET(
   _req: Request,
@@ -75,6 +71,36 @@ export async function PATCH(
       userId: "me",
       id,
       requestBody: { removeLabelIds: ["INBOX"] },
+    });
+    return NextResponse.json({ ok: true });
+  } catch (err: unknown) {
+    if (isAuthError(err))
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const msg = err instanceof Error ? err.message : "Internal error";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
+export async function PUT(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await auth();
+  if (!session?.accessToken)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id } = await params;
+  const gmail = getGmailClient(session.accessToken);
+  const body = await req.json().catch(() => ({}));
+  const star: boolean = body.star ?? true;
+
+  try {
+    await gmail.users.threads.modify({
+      userId: "me",
+      id,
+      requestBody: star
+        ? { addLabelIds: ["STARRED"] }
+        : { removeLabelIds: ["STARRED"] },
     });
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {

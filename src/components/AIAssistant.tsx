@@ -12,12 +12,52 @@ import {
   User,
   Plus,
   MessageSquare,
+  CalendarPlus,
+  CheckSquare,
+  ExternalLink,
+  Navigation,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useApp } from "@/context/AppContext";
 import { opencodeChat, detectOpencodeServer } from "@/lib/opencode";
-import type { AssistantMessage, AssistantSession } from "@/types";
+import type {
+  AssistantMessage,
+  AssistantSession,
+  AssistantAction,
+} from "@/types";
+
+const ACTION_ICONS: Record<AssistantAction["type"], React.ReactNode> = {
+  create_event: <CalendarPlus size={13} />,
+  open_event: <ExternalLink size={13} />,
+  create_task: <CheckSquare size={13} />,
+  navigate: <Navigation size={13} />,
+};
+
+const ACTIONS_SYSTEM_SUFFIX = `
+
+At the end of your response, you MAY optionally append a JSON block of actions if the user's request implies creating or viewing something. Format:
+\`\`\`actions
+[{"type":"create_event","label":"Create event","payload":{"title":"...","startHint":"2024-03-15T14:00:00","endHint":"2024-03-15T15:00:00","description":"..."}},{"type":"open_event","label":"View event","payload":{"eventId":"..."}}]
+\`\`\`
+For multi-day all-day events use dateHint (start date) and endDateHint (end date, inclusive) instead of startHint/endHint.
+Supported action types: create_event, open_event, create_task, navigate (with pageId).
+Only include the actions block when it genuinely helps. Never include it for conversational replies.`;
+
+function parseActionsFromResponse(raw: string): {
+  content: string;
+  actions: AssistantAction[];
+} {
+  const match = raw.match(/```actions\s*([\s\S]*?)```/);
+  if (!match) return { content: raw, actions: [] };
+  const content = raw.replace(/```actions\s*[\s\S]*?```/, "").trim();
+  try {
+    const actions: AssistantAction[] = JSON.parse(match[1].trim());
+    return { content, actions };
+  } catch {
+    return { content, actions: [] };
+  }
+}
 
 function buildPageContext(state: ReturnType<typeof useApp>["state"]): string {
   const page = state.pages.find((p) => p.id === state.activePage);
@@ -44,7 +84,7 @@ function buildPageContext(state: ReturnType<typeof useApp>["state"]): string {
     for (const e of state.calendarEvents.slice(0, 15)) {
       const start = e.start.dateTime ?? e.start.date ?? "";
       const loc = e.location ? ` @ ${e.location}` : "";
-      lines.push(`• ${e.summary} — ${start}${loc}`);
+      lines.push(`• [id:${e.id}] ${e.summary} — ${start}${loc}`);
       if (e.description) lines.push(`  ${e.description.slice(0, 150)}`);
     }
     if (state.calendarEvents.length > 15)
@@ -130,6 +170,51 @@ export default function AIAssistant() {
     dispatch({ type: "CLEAR_ASSISTANT_MESSAGES" });
   }
 
+  function executeAction(action: AssistantAction) {
+    switch (action.type) {
+      case "create_event":
+        dispatch({
+          type: "SET_CALENDAR_PREFILL",
+          prefill: {
+            title: action.payload?.title ?? "New Event",
+            description: action.payload?.description,
+            dateHint: action.payload?.dateHint,
+            startHint: action.payload?.startHint,
+            endHint: action.payload?.endHint,
+            endDateHint: action.payload?.endDateHint,
+          },
+        });
+        dispatch({ type: "SET_ACTIVE_PAGE", id: "calendar" });
+        dispatch({ type: "SET_OPENCODE_OVERLAY_OPEN", open: false });
+        notify("Navigated to Calendar — event pre-filled", "info");
+        break;
+      case "open_event":
+        dispatch({ type: "SET_ACTIVE_PAGE", id: "calendar" });
+        dispatch({ type: "SET_OPENCODE_OVERLAY_OPEN", open: false });
+        notify("Navigated to Calendar", "info");
+        break;
+      case "create_task":
+        dispatch({
+          type: "SET_TASK_PREFILL",
+          prefill: {
+            title: action.payload?.title ?? "New Task",
+            description: action.payload?.description,
+            dueDate: action.payload?.dateHint,
+          },
+        });
+        dispatch({ type: "SET_ACTIVE_PAGE", id: "tasks" });
+        dispatch({ type: "SET_OPENCODE_OVERLAY_OPEN", open: false });
+        notify("Navigated to Tasks — task pre-filled", "info");
+        break;
+      case "navigate":
+        if (action.payload?.pageId) {
+          dispatch({ type: "SET_ACTIVE_PAGE", id: action.payload.pageId });
+          dispatch({ type: "SET_OPENCODE_OVERLAY_OPEN", open: false });
+        }
+        break;
+    }
+  }
+
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || loading || !state.activeSessionId) return;
@@ -147,16 +232,18 @@ export default function AIAssistant() {
 
     try {
       const context = buildPageContext(state);
-      const fullPrompt = `[App Context]\n${context}\n\n[User Message]\n${text}`;
-      const response = await opencodeChat(
+      const fullPrompt = `[App Context]\n${context}\n\n[User Message]\n${text}${ACTIONS_SYSTEM_SUFFIX}`;
+      const rawResponse = await opencodeChat(
         state.opencodeUrl,
         fullPrompt,
         state.assistantModel || undefined,
       );
+      const { content, actions } = parseActionsFromResponse(rawResponse);
       const assistantMsg: AssistantMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: response,
+        content,
+        actions: actions.length > 0 ? actions : undefined,
         timestamp: new Date().toISOString(),
         sessionId: state.activeSessionId,
       };
@@ -252,7 +339,7 @@ export default function AIAssistant() {
               <p className="text-sm text-text-2 leading-relaxed">
                 Run{" "}
                 <code className="bg-surface-2 border border-border-2 px-1.5 py-0.5 rounded text-xs font-mono text-accent">
-                  opencode web --port 4096
+                  opencode serve --port 4096
                 </code>{" "}
                 in your project directory
               </p>
@@ -309,7 +396,8 @@ export default function AIAssistant() {
                     Ask me anything about your workflow
                   </p>
                   <p className="text-xs text-text-3">
-                    I can see your current page, notes, and tasks
+                    I can see your emails, calendar, notes, and tasks — and can
+                    create events or tasks for you
                   </p>
                 </div>
               )}
@@ -323,24 +411,45 @@ export default function AIAssistant() {
                       <Bot size={14} className="text-accent" />
                     </div>
                   )}
-                  <div
-                    className={`max-w-[85%] rounded-2xl text-sm leading-relaxed ${
-                      msg.role === "user"
-                        ? "bg-accent text-white rounded-br-md whitespace-pre-wrap"
-                        : "bg-surface-2 text-text border border-border rounded-bl-md"
-                    }`}
-                    style={{
-                      padding: "12px 16px",
-                    }}
-                  >
-                    {msg.role === "assistant" ? (
-                      <div className="assistant-markdown">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {msg.content}
-                        </ReactMarkdown>
+                  <div className="flex flex-col gap-2 max-w-[85%]">
+                    <div
+                      className={`rounded-2xl text-sm leading-relaxed ${
+                        msg.role === "user"
+                          ? "bg-accent text-white rounded-br-md whitespace-pre-wrap"
+                          : "bg-surface-2 text-text border border-border rounded-bl-md"
+                      }`}
+                      style={{ padding: "12px 16px" }}
+                    >
+                      {msg.role === "assistant" ? (
+                        <div className="assistant-markdown">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {msg.content}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        msg.content
+                      )}
+                    </div>
+                    {msg.actions && msg.actions.length > 0 && (
+                      <div className="flex flex-wrap gap-2 pl-1">
+                        {msg.actions.map((action, i) => (
+                          <button
+                            key={i}
+                            onClick={() => executeAction(action)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-all hover:opacity-90"
+                            style={{
+                              color: "var(--color-accent)",
+                              borderColor:
+                                "color-mix(in srgb, var(--color-accent) 30%, transparent)",
+                              backgroundColor:
+                                "color-mix(in srgb, var(--color-accent) 8%, transparent)",
+                            }}
+                          >
+                            {ACTION_ICONS[action.type]}
+                            {action.label}
+                          </button>
+                        ))}
                       </div>
-                    ) : (
-                      msg.content
                     )}
                   </div>
                   {msg.role === "user" && (

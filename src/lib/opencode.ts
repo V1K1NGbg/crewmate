@@ -1,6 +1,6 @@
 const DEFAULT_PORTS = [4096, 4097, 4098, 3000];
 const DETECT_TIMEOUT_MS = 2000;
-const REQUEST_TIMEOUT_MS = 60000;
+const REQUEST_TIMEOUT_MS = 120000;
 
 export async function detectOpencodeServer(
   baseUrl?: string,

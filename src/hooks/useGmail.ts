@@ -12,6 +12,7 @@ export interface GmailThread {
   messageCount: number;
   labelIds: string[];
   unread: boolean;
+  starred: boolean;
 }
 
 export interface GmailMessage {
@@ -115,6 +116,31 @@ export function useGmail() {
     [notify],
   );
 
+  const toggleStar = useCallback(
+    async (id: string, star: boolean) => {
+      setThreads((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, starred: star } : t)),
+      );
+      try {
+        const res = await fetch(`/api/gmail/thread/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ star }),
+        });
+        if (!res.ok) throw new Error("Toggle star failed");
+        notify(star ? "Starred" : "Unstarred", "success");
+        return true;
+      } catch {
+        setThreads((prev) =>
+          prev.map((t) => (t.id === id ? { ...t, starred: !star } : t)),
+        );
+        notify("Failed to update star", "error");
+        return false;
+      }
+    },
+    [notify],
+  );
+
   const sendEmail = useCallback(
     async (params: {
       to: string;
@@ -148,6 +174,7 @@ export function useGmail() {
     fetchThread,
     archiveThread,
     trashThread,
+    toggleStar,
     sendEmail,
     setThreads,
   };

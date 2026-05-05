@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Pencil,
   LayoutTemplate,
+  Undo2,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -18,14 +19,13 @@ import { useApp } from "@/context/AppContext";
 import { opencodeChat } from "@/lib/opencode";
 
 const NOTE_TEMPLATE_PROMPT = (content: string) =>
-  `You are a smart note formatter. Read the content below carefully and figure out what kind of content it is — it could be meeting notes, a task list, an email draft, an event plan, a project brief, a journal entry, research notes, a brain dump, or anything else.
-
-Then reformat it into the most fitting, well-structured markdown document for that type of content. Use the sections that make the most sense given what the content actually is. Do not force it into a rigid template — let the content dictate the structure.
+  `You are a markdown structure formatter. Your ONLY job is to fix the structure and formatting of the note below — do NOT change, reword, paraphrase, summarize, or remove any words or information.
 
 Rules:
-- Preserve every piece of information. Do not drop, summarize, or paraphrase existing content.
-- Use clear markdown headings (##) and formatting (bullet lists, checkboxes, bold labels) where appropriate.
-- If the content is already well-structured, refine and clean it without changing what's there.
+- Preserve every single word exactly as written. Do not alter the meaning or wording of anything.
+- Fix markdown structure only: add/fix headings (##/###), bullet lists, numbered lists, checkboxes (- [ ]), bold labels, code blocks, and spacing.
+- Remove duplicate blank lines. Ensure consistent indentation.
+- If the content is already well-structured, make only minimal improvements.
 - Output only the final formatted document — no preamble, no explanation, no meta-commentary.
 
 Content:
@@ -47,6 +47,9 @@ export default function NotesPage() {
   const [initError, setInitError] = useState<string | null>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastContentRef = useRef<string | null>(null);
+  const [canUndoFormat, setCanUndoFormat] = useState(false);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!editing) return;
@@ -188,10 +191,14 @@ export default function NotesPage() {
     try {
       const prompt = NOTE_TEMPLATE_PROMPT(content.slice(0, 6000));
       const result = await opencodeChat(state.opencodeUrl, prompt);
+      lastContentRef.current = content;
       setContent(result);
       setDirty(true);
       scheduleAutoSave();
-      notify("Template applied", "success");
+      setCanUndoFormat(true);
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = setTimeout(() => setCanUndoFormat(false), 8000);
+      notify("Formatting applied", "success");
     } catch (err: unknown) {
       notify(
         err instanceof Error ? err.message : "Template apply failed",
@@ -200,6 +207,17 @@ export default function NotesPage() {
     } finally {
       setApplyingTemplate(false);
     }
+  }
+
+  function handleUndoFormat() {
+    if (lastContentRef.current === null) return;
+    setContent(lastContentRef.current);
+    lastContentRef.current = null;
+    setCanUndoFormat(false);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setDirty(true);
+    scheduleAutoSave();
+    notify("Format undone", "info");
   }
 
   if (!session?.accessToken || initError) {
@@ -304,7 +322,7 @@ export default function NotesPage() {
             disabled={applyingTemplate}
             style={{ padding: "2px 12px" }}
             className="flex items-center gap-1.5 text-sm text-text-2 border border-border-2 rounded-lg hover:border-accent hover:text-accent transition-all disabled:opacity-50"
-            title="Reformat note with AI"
+            title="Reformat note structure with AI (words preserved)"
           >
             {applyingTemplate ? (
               <Loader2 size={12} className="animate-spin" />
@@ -313,6 +331,16 @@ export default function NotesPage() {
             )}{" "}
             Format
           </button>
+          {canUndoFormat && (
+            <button
+              onClick={handleUndoFormat}
+              style={{ padding: "2px 12px" }}
+              className="flex items-center gap-1.5 text-sm text-warning border border-warning/40 rounded-lg hover:bg-warning/10 transition-all"
+              title="Undo last format"
+            >
+              <Undo2 size={12} /> Undo
+            </button>
+          )}
           <button
             onClick={handleAISummarize}
             disabled={summarizing}

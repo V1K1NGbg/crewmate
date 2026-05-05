@@ -55,6 +55,7 @@ export default function TasksPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
   const listIdRef = useRef<string | null>(null);
+  const emailContextRef = useRef<Map<string, string>>(new Map()); // taskId → email body
 
   // Adding subtask state
   const [addingSubtaskTo, setAddingSubtaskTo] = useState<string | null>(null);
@@ -128,9 +129,14 @@ export default function TasksPage() {
 
   useEffect(() => {
     if (!state.taskPrefill || !listId) return;
-    const { title, description, dueDate } = state.taskPrefill;
+    const { title, description, dueDate, emailContext } = state.taskPrefill;
     dispatch({ type: "CLEAR_TASK_PREFILL" });
-    handleCreateTask(title || "Untitled", description, dueDate);
+    handleCreateTask(title || "Untitled", description, dueDate).then(
+      (taskId) => {
+        if (taskId && emailContext)
+          emailContextRef.current.set(taskId, emailContext);
+      },
+    );
   }, [state.taskPrefill]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -140,8 +146,12 @@ export default function TasksPage() {
     return () => clearInterval(id);
   }, [state.pageSettings.general.autoRefreshInterval, refreshTasks, listId]);
 
-  async function handleCreateTask(title: string, notes?: string, due?: string) {
-    if (!listId || !title.trim()) return;
+  async function handleCreateTask(
+    title: string,
+    notes?: string,
+    due?: string,
+  ): Promise<string | null> {
+    if (!listId || !title.trim()) return null;
     try {
       const res = await fetch("/api/tasks/items", {
         method: "POST",
@@ -157,8 +167,10 @@ export default function TasksPage() {
       const { task } = await res.json();
       setTasks((prev) => [task, ...prev]);
       notify("Task created", "success");
+      return task.id ?? null;
     } catch (err: unknown) {
       notify(err instanceof Error ? err.message : "Create failed", "error");
+      return null;
     }
   }
 
@@ -183,9 +195,9 @@ export default function TasksPage() {
         }),
       });
       if (!res.ok) throw new Error("Failed to create subtask");
-      const { task } = await res.json();
-      // Add subtask to local state immediately
-      setTasks((prev) => [task, ...prev]);
+      const { task: newSubtask } = await res.json();
+      // Append subtask to local state so it appears last
+      setTasks((prev) => [...prev, newSubtask]);
       setAddingSubtaskTo(null);
       setNewSubtaskTitle("");
       notify("Subtask added", "success");
@@ -380,10 +392,12 @@ export default function TasksPage() {
     }
     setExpandingId(task.id);
     try {
-      const context = task.notes
-        ? `Title: ${task.title}\nDescription: ${task.notes}`
-        : `Title: ${task.title}`;
-      const prompt = `Break down the following task into exactly 5 concrete, actionable subtasks. Return ONLY a plain numbered list (1. ... 2. ... etc.), no markdown headers, no explanation, nothing else.\n\n${context}`;
+      const emailContext = emailContextRef.current.get(task.id);
+      const contextLines = [`Title: ${task.title}`];
+      if (task.notes) contextLines.push(`Description: ${task.notes}`);
+      if (emailContext)
+        contextLines.push(`\nEmail context:\n${emailContext.slice(0, 3000)}`);
+      const prompt = `Break down the following task into exactly 5 concrete, actionable subtasks. Return ONLY a plain numbered list (1. ... 2. ... etc.), no markdown headers, no explanation, nothing else.\n\n${contextLines.join("\n")}`;
       const response = await opencodeChat(state.opencodeUrl, prompt);
       const lines = response
         .split("\n")

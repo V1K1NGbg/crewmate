@@ -55,6 +55,7 @@ export interface TaskPrefill {
   title: string;
   description?: string;
   dueDate?: string;
+  emailContext?: string;
 }
 
 // ─── UI ───────────────────────────────────────────────────────────────────────
@@ -72,6 +73,8 @@ export interface CalendarPrefill {
   dateHint?: string;
   startHint?: string;
   endHint?: string;
+  endDateHint?: string; // for multi-day all-day events
+  emailContext?: string;
 }
 
 // ─── Color Schemes ────────────────────────────────────────────────────────────
@@ -91,6 +94,11 @@ export interface ColorSchemeColors {
   success: string;
   warning: string;
   danger: string;
+  // Per-page identity colors — must all be visually distinct within each theme
+  mail: string;
+  calendar: string;
+  notes: string;
+  tasks: string;
 }
 
 export interface ColorScheme {
@@ -118,6 +126,10 @@ export const COLOR_SCHEMES: ColorScheme[] = [
       success: "#4ade80",
       warning: "#fbbf24",
       danger: "#f87171",
+      mail: "#f87171", // red
+      calendar: "#818cf8", // indigo
+      notes: "#fbbf24", // amber
+      tasks: "#4ade80", // green
     },
   },
   {
@@ -138,6 +150,10 @@ export const COLOR_SCHEMES: ColorScheme[] = [
       success: "#a6e22e",
       warning: "#e6db74",
       danger: "#f92672",
+      mail: "#f92672", // pink-red
+      calendar: "#66d9e8", // cyan
+      notes: "#e6db74", // yellow
+      tasks: "#a6e22e", // green
     },
   },
   {
@@ -158,6 +174,10 @@ export const COLOR_SCHEMES: ColorScheme[] = [
       success: "#a3be8c",
       warning: "#ebcb8b",
       danger: "#bf616a",
+      mail: "#bf616a", // red
+      calendar: "#88c0d0", // cyan
+      notes: "#ebcb8b", // yellow
+      tasks: "#a3be8c", // green
     },
   },
   {
@@ -178,6 +198,10 @@ export const COLOR_SCHEMES: ColorScheme[] = [
       success: "#859900",
       warning: "#b58900",
       danger: "#dc322f",
+      mail: "#dc322f", // red
+      calendar: "#268bd2", // blue
+      notes: "#b58900", // yellow
+      tasks: "#859900", // green
     },
   },
   {
@@ -198,6 +222,10 @@ export const COLOR_SCHEMES: ColorScheme[] = [
       success: "#50fa7b",
       warning: "#f1fa8c",
       danger: "#ff5555",
+      mail: "#ff5555", // red
+      calendar: "#bd93f9", // purple
+      notes: "#f1fa8c", // yellow
+      tasks: "#50fa7b", // green
     },
   },
   {
@@ -218,6 +246,10 @@ export const COLOR_SCHEMES: ColorScheme[] = [
       success: "#b8bb26",
       warning: "#fabd2f",
       danger: "#fb4934",
+      mail: "#fb4934", // red
+      calendar: "#83a598", // aqua
+      notes: "#fe8019", // orange
+      tasks: "#b8bb26", // green
     },
   },
   {
@@ -238,6 +270,10 @@ export const COLOR_SCHEMES: ColorScheme[] = [
       success: "#16a34a",
       warning: "#ca8a04",
       danger: "#dc2626",
+      mail: "#dc2626", // red
+      calendar: "#6366f1", // indigo
+      notes: "#ca8a04", // amber
+      tasks: "#16a34a", // green
     },
   },
   {
@@ -258,6 +294,10 @@ export const COLOR_SCHEMES: ColorScheme[] = [
       success: "#859900",
       warning: "#b58900",
       danger: "#dc322f",
+      mail: "#dc322f", // red
+      calendar: "#268bd2", // blue
+      notes: "#b58900", // yellow
+      tasks: "#859900", // green
     },
   },
   {
@@ -278,6 +318,10 @@ export const COLOR_SCHEMES: ColorScheme[] = [
       success: "#1a7f37",
       warning: "#9a6700",
       danger: "#cf222e",
+      mail: "#cf222e", // red
+      calendar: "#0969da", // blue
+      notes: "#9a6700", // amber
+      tasks: "#1a7f37", // green
     },
   },
   {
@@ -298,6 +342,10 @@ export const COLOR_SCHEMES: ColorScheme[] = [
       success: "#40a02b",
       warning: "#df8e1d",
       danger: "#d20f39",
+      mail: "#d20f39", // red
+      calendar: "#7287fd", // lavender
+      notes: "#df8e1d", // yellow
+      tasks: "#40a02b", // green
     },
   },
 ];
@@ -325,9 +373,10 @@ export interface CalendarSettings {
   startHour: number;
   endHour: number;
   timezone: string;
-  weekStartsOn: 0 | 1; // 0 = Sunday, 1 = Monday
-  enabledCalendarIds: string[]; // empty means all
-  defaultCalendarId: string; // calendar for new events
+  weekStartsOn: 0 | 1;
+  enabledCalendarIds: string[];
+  defaultCalendarId: string;
+  use24HourTime: boolean;
 }
 
 export interface NotesSettings {
@@ -355,12 +404,28 @@ export interface PageSettings {
 
 // ─── AI Assistant ─────────────────────────────────────────────────────────────
 
+export interface AssistantAction {
+  type: "create_event" | "open_event" | "create_task" | "navigate";
+  label: string;
+  payload?: {
+    title?: string;
+    description?: string;
+    dateHint?: string;
+    startHint?: string;
+    endHint?: string;
+    endDateHint?: string;
+    eventId?: string;
+    pageId?: string;
+  };
+}
+
 export interface AssistantMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: string;
   sessionId: string;
+  actions?: AssistantAction[];
 }
 
 export interface AssistantSession {
