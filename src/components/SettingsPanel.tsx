@@ -43,13 +43,9 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   // AI state
   const [urlDraft, setUrlDraft] = useState(state.opencodeUrl);
   const [modelDraft, setModelDraft] = useState(state.assistantModel);
-  const [suggestionModelDraft, setSuggestionModelDraft] = useState(
-    state.pageSettings.gmail.suggestionModel,
-  );
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [showAssistantDropdown, setShowAssistantDropdown] = useState(false);
-  const [showSuggestionDropdown, setShowSuggestionDropdown] = useState(false);
 
   // Calendar list state
   const [calendarList, setCalendarList] = useState<GoogleCalendarList[]>([]);
@@ -58,12 +54,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     setUrlDraft(state.opencodeUrl);
     setModelDraft(state.assistantModel);
-    setSuggestionModelDraft(state.pageSettings.gmail.suggestionModel);
-  }, [
-    state.opencodeUrl,
-    state.assistantModel,
-    state.pageSettings.gmail.suggestionModel,
-  ]);
+  }, [state.opencodeUrl, state.assistantModel]);
 
   // Load calendar list when calendar tab is opened
   useEffect(() => {
@@ -101,13 +92,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   function saveAI() {
     dispatch({ type: "SET_OPENCODE_URL", url: urlDraft });
     dispatch({ type: "SET_ASSISTANT_MODEL", model: modelDraft });
-    dispatch({
-      type: "UPDATE_PAGE_SETTINGS",
-      key: "gmail",
-      settings: { suggestionModel: suggestionModelDraft },
-    });
     setShowAssistantDropdown(false);
-    setShowSuggestionDropdown(false);
     notify("AI settings saved", "success");
   }
 
@@ -291,12 +276,13 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                       />
                     </SettingRow>
 
-                    {/* Assistant model picker */}
+                    {/* Model picker */}
                     <SettingRow
-                      label="Assistant model"
+                      label="Model"
                       description={
                         <>
-                          Model used in the AI chat assistant.{" "}
+                          Model used for all AI features — chat assistant, email
+                          suggestions, task breakdown, and more.{" "}
                           <span className="text-text-muted">
                             Append <code>:none</code> or <code>:low</code> to
                             disable/reduce thinking for local models (e.g.{" "}
@@ -319,7 +305,6 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                           onClick={async () => {
                             if (models.length === 0) await loadModels();
                             setShowAssistantDropdown((v) => !v);
-                            setShowSuggestionDropdown(false);
                           }}
                           disabled={modelsLoading}
                           className="flex items-center gap-1.5 text-sm text-accent border border-border-2 rounded-lg hover:bg-surface-2 transition-colors disabled:opacity-50 px-3"
@@ -335,63 +320,10 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                         <ModelDropdown
                           models={models}
                           currentValue={modelDraft}
-                          label="assistant"
+                          label="model"
                           onSelect={(v) => {
                             setModelDraft(v);
                             setShowAssistantDropdown(false);
-                          }}
-                        />
-                      )}
-                    </SettingRow>
-
-                    {/* Suggestion model picker */}
-                    <SettingRow
-                      label="Suggestion model (Gmail)"
-                      description={
-                        <>
-                          Model used for email action suggestions.{" "}
-                          <span className="text-text-muted">
-                            Append <code>:none</code> or <code>:low</code> to
-                            disable/reduce thinking (e.g.{" "}
-                            <code>ollama/...:none</code>).
-                          </span>
-                        </>
-                      }
-                    >
-                      <div className="flex gap-2">
-                        <input
-                          className="settings-input flex-1"
-                          value={suggestionModelDraft}
-                          onChange={(e) => {
-                            setSuggestionModelDraft(e.target.value);
-                            setShowSuggestionDropdown(false);
-                          }}
-                          placeholder="Same as assistant"
-                        />
-                        <button
-                          onClick={async () => {
-                            if (models.length === 0) await loadModels();
-                            setShowSuggestionDropdown((v) => !v);
-                            setShowAssistantDropdown(false);
-                          }}
-                          disabled={modelsLoading}
-                          className="flex items-center gap-1.5 text-sm text-accent border border-border-2 rounded-lg hover:bg-surface-2 transition-colors disabled:opacity-50 px-3"
-                        >
-                          <ChevronDown
-                            size={14}
-                            className={modelsLoading ? "animate-spin" : ""}
-                          />{" "}
-                          Browse
-                        </button>
-                      </div>
-                      {showSuggestionDropdown && models.length > 0 && (
-                        <ModelDropdown
-                          models={models}
-                          currentValue={suggestionModelDraft}
-                          label="suggestions"
-                          onSelect={(v) => {
-                            setSuggestionModelDraft(v);
-                            setShowSuggestionDropdown(false);
                           }}
                         />
                       )}

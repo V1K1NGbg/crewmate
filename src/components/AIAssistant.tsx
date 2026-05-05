@@ -28,10 +28,10 @@ import type {
 } from "@/types";
 
 const ACTION_ICONS: Record<AssistantAction["type"], React.ReactNode> = {
-  create_event: <CalendarPlus size={13} />,
-  open_event: <ExternalLink size={13} />,
-  create_task: <CheckSquare size={13} />,
-  navigate: <Navigation size={13} />,
+  create_event: <CalendarPlus size={15} />,
+  open_event: <ExternalLink size={15} />,
+  create_task: <CheckSquare size={15} />,
+  navigate: <Navigation size={15} />,
 };
 
 const ACTIONS_SYSTEM_SUFFIX = `
@@ -436,7 +436,7 @@ export default function AIAssistant() {
                           <button
                             key={i}
                             onClick={() => executeAction(action)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-all hover:opacity-90"
+                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border transition-all hover:opacity-90"
                             style={{
                               color: "var(--color-accent)",
                               borderColor:

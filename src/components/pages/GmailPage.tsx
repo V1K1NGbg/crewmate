@@ -410,9 +410,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
       const response = await opencodeChat(
         state.opencodeUrl,
         prompt,
-        state.pageSettings.gmail.suggestionModel ||
-          state.assistantModel ||
-          undefined,
+        state.assistantModel || undefined,
       );
       const jsonMatch = response.match(/\[[\s\S]*\]/);
       if (!jsonMatch) throw new Error("No JSON in response");
@@ -1061,17 +1059,10 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                   />
                 )}
               </div>
-              {(state.pageSettings.gmail.suggestionModel ||
-                state.assistantModel) && (
+              {state.assistantModel && (
                 <div className="px-4 py-1.5 border-b border-border/50">
                   <span className="text-xs font-mono text-text-3">
-                    model:{" "}
-                    {(
-                      state.pageSettings.gmail.suggestionModel ||
-                      state.assistantModel
-                    )
-                      .split("/")
-                      .pop()}
+                    model: {state.assistantModel.split("/").pop()}
                   </span>
                 </div>
               )}

@@ -197,7 +197,7 @@ export default function TasksPage() {
       if (!res.ok) throw new Error("Failed to create subtask");
       const { task: newSubtask } = await res.json();
       // Append subtask to local state so it appears last
-      setTasks((prev) => [...prev, newSubtask]);
+      setTasks((prev) => [newSubtask, ...prev]);
       setAddingSubtaskTo(null);
       setNewSubtaskTitle("");
       notify("Subtask added", "success");
@@ -958,17 +958,57 @@ export default function TasksPage() {
                   </>
                 ) : (
                   /* No subtasks yet */
-                  <div className="pl-12 pr-4 py-3 text-xs text-text-3 flex items-center gap-2">
-                    <span>No subtasks.</span>
-                    <button
-                      onClick={() => setAddingSubtaskTo(task.id)}
-                      style={{ padding: "2px 10px" }}
-                      className="text-xs font-medium text-text-2 border border-border-2 rounded hover:border-accent hover:text-accent transition-all"
-                    >
-                      Add one
-                    </button>
-                    <span>or use AI breakdown above.</span>
-                  </div>
+                  <>
+                    {addingSubtaskTo === task.id ? (
+                      <div className="flex items-center gap-2 pl-12 pr-4 py-2">
+                        <div className="w-6 h-6 flex-shrink-0" />
+                        <input
+                          autoFocus
+                          className="flex-1 bg-bg border border-border-2 rounded-lg px-3 py-1.5 text-sm text-text outline-none focus:border-accent"
+                          placeholder="Subtask title..."
+                          value={newSubtaskTitle}
+                          onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleAddSubtask();
+                            if (e.key === "Escape") {
+                              setAddingSubtaskTo(null);
+                              setNewSubtaskTitle("");
+                            }
+                          }}
+                        />
+                        <button
+                          onClick={handleAddSubtask}
+                          disabled={!newSubtaskTitle.trim()}
+                          style={{ padding: "2px 12px" }}
+                          className="text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-40"
+                        >
+                          Add
+                        </button>
+                        <button
+                          onClick={() => {
+                            setAddingSubtaskTo(null);
+                            setNewSubtaskTitle("");
+                          }}
+                          style={{ padding: "2px 10px" }}
+                          className="text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:text-text hover:bg-surface-2 transition-all"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="pl-12 pr-4 py-3 text-xs text-text-3 flex items-center gap-2">
+                        <span>No subtasks.</span>
+                        <button
+                          onClick={() => setAddingSubtaskTo(task.id)}
+                          style={{ padding: "2px 10px" }}
+                          className="text-xs font-medium text-text-2 border border-border-2 rounded hover:border-accent hover:text-accent transition-all"
+                        >
+                          Add one
+                        </button>
+                        <span>or use AI breakdown above.</span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 

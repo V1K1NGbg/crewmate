@@ -60,7 +60,7 @@ const DEFAULT_PAGES: Page[] = [
 
 export const DEFAULT_PAGE_SETTINGS: PageSettings = {
   general: { autoRefreshInterval: 0, colorScheme: "default" },
-  gmail: { maxThreads: 20, defaultQuery: "is:inbox", suggestionModel: "" },
+  gmail: { maxThreads: 20, defaultQuery: "is:inbox" },
   calendar: {
     defaultView: "month",
     showWeekends: true,

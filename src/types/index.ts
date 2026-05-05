@@ -355,7 +355,6 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 export interface GmailSettings {
   maxThreads: number;
   defaultQuery: string;
-  suggestionModel: string;
 }
 
 export interface GoogleCalendarList {
