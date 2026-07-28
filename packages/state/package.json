@@ -1,0 +1,13 @@
+{
+    "name": "@crewmate/state",
+    "version": "1.0.0",
+    "private": true,
+    "main": "./src/index.tsx",
+    "types": "./src/index.tsx",
+    "dependencies": {
+        "@crewmate/types": "*"
+    },
+    "peerDependencies": {
+        "react": "^19"
+    }
+}

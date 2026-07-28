@@ -1,0 +1,1 @@
+export { calendarPlugin } from "./plugin";

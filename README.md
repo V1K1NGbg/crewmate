@@ -59,7 +59,7 @@ NEXT_PUBLIC_OPENCODE_URL=http://localhost:4096
 ## Getting Started
 
 ```bash
-# 1. Install dependencies
+# 1. Install dependencies (installs and links all workspace packages)
 npm install
 
 # 2. Start the development server
@@ -67,6 +67,8 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000), sign in with Google, and you're ready.
+
+The `.env`/`.env.local` file lives in `apps/web/` (that's the Next.js app root).
 
 ### Other scripts
 
@@ -80,34 +82,36 @@ npm run lint    # Run ESLint
 
 ## Project Structure
 
+This is an **npm workspaces monorepo**. There is a single Next.js app (`apps/web`) that composes four independent, locally-published "menu" packages — Mail, Calendar, Notes, and Tasks — plus shared `types`/`state`/`lib` packages. All four menus still share one global state, one auth session, and the same cross-feature "prefill" flows (e.g. turning an email into a calendar event or task) as before — only the file organization changed.
+
 ```
-src/
-├── auth.ts                  # NextAuth config (Google OAuth, token refresh)
-├── app/
-│   ├── page.tsx             # Sign-in page (redirects to /app if authenticated)
-│   ├── app/page.tsx         # Main dashboard entry point
-│   └── api/
-│       ├── auth/            # NextAuth route handlers
-│       ├── gmail/           # Threads, messages, send
-│       ├── calendar/        # Events CRUD
-│       ├── docs/            # Google Docs init + content read/write
-│       └── tasks/           # Google Tasks init + items CRUD
-├── components/
-│   ├── AppShell.tsx         # Main layout, keyboard shortcuts
-│   ├── Navigation.tsx       # Sidebar with page icons
-│   ├── TopBar.tsx           # Header bar
-│   ├── AIAssistant.tsx      # AI chat overlay (centered popup)
-│   ├── SettingsPanel.tsx    # Settings modal (centered popup)
-│   └── pages/               # GmailPage, CalendarPage, NotesPage, TasksPage, CustomPage
-├── context/
-│   └── AppContext.tsx       # Global state (pages, data, settings, notifications)
-├── hooks/
-│   ├── useGmail.ts          # Gmail data fetching and mutations
-│   └── useCalendar.ts       # Calendar data fetching and mutations
-└── lib/
-    ├── google.ts            # Authenticated Google API client factory
-    ├── opencode.ts          # Opencode AI server client
-    └── useResizable.ts      # Panel resize hook
+apps/
+└── web/                        # The Next.js app — routing, API routes, auth, shell UI
+    └── src/
+        ├── auth.ts             # NextAuth config (Google OAuth, token refresh)
+        ├── app/
+        │   ├── page.tsx        # Sign-in page (redirects to /app if authenticated)
+        │   ├── app/page.tsx    # Main dashboard entry point
+        │   └── api/            # gmail/, calendar/, docs/, tasks/, auth/ route handlers
+        └── components/
+            ├── AppShell.tsx        # Main layout, keyboard shortcuts, composes all 4 menu packages
+            ├── Navigation.tsx      # Sidebar with page icons
+            ├── TopBar.tsx          # Header bar
+            ├── AIAssistant.tsx     # AI chat overlay (centered popup)
+            ├── SettingsPanel.tsx   # Settings modal (centered popup)
+            └── pages/CustomPage.tsx
+
+packages/
+├── types/       (@crewmate/types)    # Shared TS types used by every package (Page, Note, Task,
+│                                       CalendarEvent, GmailThread, PageSettings, ColorScheme, ...)
+├── state/       (@crewmate/state)    # AppContext — the global reducer/dispatch all 4 menus share
+├── lib/         (@crewmate/lib)      # opencode.ts, useResizable.ts (client-safe: default export)
+│                                       google.ts, googleApiError.ts (server-only: "@crewmate/lib/server")
+├── mail/        (@crewmate/mail)     # GmailPage.tsx + useGmail.ts
+├── calendar/    (@crewmate/calendar) # CalendarPage.tsx + useCalendar.ts + calendar settings/date helpers
+│                                       (pure helpers also exposed via "@crewmate/calendar/shared")
+├── notes/       (@crewmate/notes)    # NotesPage.tsx + useNotes.ts
+└── tasks/       (@crewmate/tasks)    # TasksPage.tsx + useTasks.ts + taskEmailContext.ts
 ```
 
 ---

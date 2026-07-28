@@ -1,0 +1,1 @@
+export { mailPlugin } from "./plugin";

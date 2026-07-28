@@ -1,0 +1,19 @@
+{
+    "name": "@crewmate/notes",
+    "version": "1.0.0",
+    "private": true,
+    "main": "./src/index.ts",
+    "types": "./src/index.ts",
+    "dependencies": {
+        "@crewmate/lib": "*",
+        "@crewmate/state": "*",
+        "@crewmate/types": "*",
+        "lucide-react": "^1.7.0",
+        "react-markdown": "^10.1.0",
+        "remark-gfm": "^4.0.1"
+    },
+    "peerDependencies": {
+        "next-auth": "^5.0.0-beta.30",
+        "react": "^19"
+    }
+}
