@@ -9,7 +9,7 @@
         "lint": "eslint"
     },
     "dependencies": {
-        "@auth/core": "^0.41.0",
+        "@auth/core": "^0.41.3",
         "@crewmate/calendar": "*",
         "@crewmate/lib": "*",
         "@crewmate/mail": "*",
@@ -17,24 +17,24 @@
         "@crewmate/state": "*",
         "@crewmate/tasks": "*",
         "@crewmate/types": "*",
-        "date-fns": "^4.1.0",
-        "googleapis": "^171.4.0",
-        "lucide-react": "^1.7.0",
-        "next": "^16.2.4",
-        "next-auth": "^5.0.0-beta.30",
-        "react": "19.2.4",
-        "react-dom": "19.2.4",
+        "date-fns": "^4.4.0",
+        "googleapis": "^173.0.0",
+        "lucide-react": "^1.27.0",
+        "next": "^16.2.12",
+        "next-auth": "^5.0.0-beta.32",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
         "react-markdown": "^10.1.0",
         "remark-gfm": "^4.0.1"
     },
     "devDependencies": {
-        "@tailwindcss/postcss": "^4",
-        "@types/node": "^20",
-        "@types/react": "^19",
-        "@types/react-dom": "^19",
-        "eslint": "^9",
-        "eslint-config-next": "16.2.1",
-        "tailwindcss": "^4",
-        "typescript": "^5"
+        "@tailwindcss/postcss": "^4.3.3",
+        "@types/node": "^26.1.2",
+        "@types/react": "^19.2.17",
+        "@types/react-dom": "^19.2.3",
+        "eslint": "^9.39.5",
+        "eslint-config-next": "16.2.12",
+        "tailwindcss": "^4.3.3",
+        "typescript": "^6.0.3"
     }
 }

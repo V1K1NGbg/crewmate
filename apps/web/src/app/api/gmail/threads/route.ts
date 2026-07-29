@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import {
   isAuthError,
   getGmailClient,
-  decodeGmailBody,
   getGmailHeader,
 } from "@crewmate/lib/server";
 

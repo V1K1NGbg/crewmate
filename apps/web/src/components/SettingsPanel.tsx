@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import {
   X,
   Settings,
@@ -69,14 +69,10 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   ).map((p) => ({ id: p.id, label: p.label, icon: p.icon }));
 
   const SECTIONS = [...STATIC_SECTIONS, ...pluginSections];
-  const activePlugin = PLUGINS.find((p) => p.id === activeSection);
-
-  useEffect(() => {
-    if (!SECTIONS.some((s) => s.id === activeSection)) {
-      setActiveSection("general");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.installedFeatures, state.pages]);
+  const resolvedActiveSection = SECTIONS.some((s) => s.id === activeSection)
+    ? activeSection
+    : "general";
+  const activePlugin = PLUGINS.find((p) => p.id === resolvedActiveSection);
 
   async function recheckInstalledFeatures() {
     setCheckingFeatures(true);
@@ -99,11 +95,6 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [showAssistantDropdown, setShowAssistantDropdown] = useState(false);
-
-  useEffect(() => {
-    setUrlDraft(state.opencodeUrl);
-    setModelDraft(state.assistantModel);
-  }, [state.opencodeUrl, state.assistantModel]);
 
   async function loadModels() {
     setModelsLoading(true);
@@ -160,7 +151,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           <nav className="w-60 flex-shrink-0 border-r border-border bg-surface overflow-y-auto py-4">
             {SECTIONS.map((s) => {
               const Icon = s.icon;
-              const isActive = activeSection === s.id;
+              const isActive = resolvedActiveSection === s.id;
               return (
                 <button
                   key={s.id}
@@ -182,20 +173,20 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           <div className="flex-1 overflow-y-auto">
             <div className="max-w-xl mx-auto px-8 py-6">
               <h2 className="text-base font-semibold text-text mb-1">
-                {SECTIONS.find((s) => s.id === activeSection)?.label}
+                {SECTIONS.find((s) => s.id === resolvedActiveSection)?.label}
               </h2>
               <p className="text-sm text-text-3 mb-6">
-                {activeSection === "general" &&
+                {resolvedActiveSection === "general" &&
                   "Global preferences that apply across all pages."}
-                {activeSection === "packages" &&
+                {resolvedActiveSection === "packages" &&
                   "Each menu is its own package. Enable or disable any combination — disabled pages disconnect entirely: no nav icon, no data fetching, no AI actions targeting them."}
-                {activeSection === "ai" &&
+                {resolvedActiveSection === "ai" &&
                   "Configure the AI assistant server and model selection."}
                 {activePlugin && activePlugin.description}
               </p>
 
               <div className="flex flex-col gap-5">
-                {activeSection === "packages" && (
+                {resolvedActiveSection === "packages" && (
                   <>
                     <div className="flex justify-end -mt-2">
                       <button
@@ -303,7 +294,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                   </>
                 )}
 
-                {activeSection === "general" && (
+                {resolvedActiveSection === "general" && (
                   <>
                     <SettingRow
                       label="Color scheme"
@@ -383,7 +374,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                   </>
                 )}
 
-                {activeSection === "ai" && (
+                {resolvedActiveSection === "ai" && (
                   <>
                     <SettingRow label="Server URL">
                       <input

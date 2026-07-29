@@ -8,11 +8,11 @@
         "@crewmate/lib": "*",
         "@crewmate/state": "*",
         "@crewmate/types": "*",
-        "date-fns": "^4.1.0",
-        "lucide-react": "^1.7.0"
+        "date-fns": "^4.4.0",
+        "lucide-react": "^1.27.0"
     },
     "peerDependencies": {
-        "next-auth": "^5.0.0-beta.30",
+        "next-auth": "^5.0.0-beta.32",
         "react": "^19"
     }
 }

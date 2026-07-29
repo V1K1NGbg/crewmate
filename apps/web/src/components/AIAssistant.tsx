@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   X,
   Send,
@@ -104,7 +104,10 @@ export default function AIAssistant() {
   const activeSession = state.assistantSessions.find(
     (s) => s.id === state.activeSessionId,
   );
-  const messages = activeSession?.messages ?? [];
+  const messages = useMemo(
+    () => activeSession?.messages ?? [],
+    [activeSession?.messages],
+  );
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

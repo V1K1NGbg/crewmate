@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useApp } from "@crewmate/state";
 import type { Note } from "@crewmate/types";
 import { DEFAULT_NOTES_SETTINGS, type NotesPluginSettings } from "./settings";
@@ -38,8 +38,10 @@ export function useNotes() {
   const dirtyRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  contentRef.current = content;
-  dirtyRef.current = dirty;
+  useEffect(() => {
+    contentRef.current = content;
+    dirtyRef.current = dirty;
+  }, [content, dirty]);
 
   const initDoc = useCallback(async () => {
     setLoading(true);

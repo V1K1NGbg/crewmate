@@ -81,8 +81,10 @@ export default function NotesPage() {
   }, [editing]);
 
   useEffect(() => {
+    // Authentication is external state; initialize the remote document once available.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (session?.accessToken) initDoc();
-  }, [session?.accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session?.accessToken, initDoc]);
 
   useEffect(() => {
     dispatch({
@@ -102,7 +104,7 @@ export default function NotesPage() {
     const addition = `\n\n## ${title}\n\n> Added on ${timestamp}\n\n${prefillContent || ""}\n`;
     appendContent(addition);
     notify("Content appended from prefill", "success");
-  }, [notePrefill]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [notePrefill, docId, dispatch, appendContent, notify]);
 
   useEffect(() => {
     const interval = state.pageSettings.general.autoRefreshInterval;
@@ -194,12 +196,13 @@ export default function NotesPage() {
             </p>
           </div>
           {isUnauthorized ? (
-            <a
-              href="/api/auth/signout"
+            <button
+              type="button"
+              onClick={() => window.location.assign("/api/auth/signout")}
               className="w-full flex items-center justify-center px-4 py-2.5 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-all"
             >
               Sign out &amp; re-authenticate
-            </a>
+            </button>
           ) : (
             <button
               onClick={initDoc}

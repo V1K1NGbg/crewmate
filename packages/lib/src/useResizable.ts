@@ -29,6 +29,8 @@ export function useResizable({
 
     // Sync if initial changes externally (e.g. from persisted state)
     useEffect(() => {
+        // The persisted panel width is an external value mirrored by the drag state.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setWidth(initial);
     }, [initial]);
 

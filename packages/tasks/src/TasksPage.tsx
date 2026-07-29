@@ -70,8 +70,10 @@ export default function TasksPage() {
   const [editSubtaskTitle, setEditSubtaskTitle] = useState("");
 
   useEffect(() => {
+    // Authentication is external state; initialize the remote task list once available.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (session?.accessToken) initList();
-  }, [session?.accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session?.accessToken, initList]);
 
   useEffect(() => {
     dispatch({
@@ -275,12 +277,13 @@ export default function TasksPage() {
             </p>
           </div>
           {isUnauthorized ? (
-            <a
-              href="/api/auth/signout"
+            <button
+              type="button"
+              onClick={() => window.location.assign("/api/auth/signout")}
               className="w-full flex items-center justify-center px-4 py-2.5 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover transition-all"
             >
               Sign out &amp; re-authenticate
-            </a>
+            </button>
           ) : (
             <button
               onClick={initList}

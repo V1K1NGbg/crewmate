@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -25,7 +25,6 @@ import {
   endOfWeek,
   eachDayOfInterval,
   isSameMonth,
-  isSameDay,
   addMonths,
   subMonths,
   addWeeks,
@@ -36,7 +35,6 @@ import {
   startOfDay,
   addDays,
   differenceInCalendarDays,
-  isWithinInterval,
 } from "date-fns";
 import { useApp } from "@crewmate/state";
 import { useResizable } from "@crewmate/lib";
@@ -155,10 +153,8 @@ export default function CalendarPage() {
 
   // Calendar list for coloring & selector
   const [calendarList, setCalendarList] = useState<GoogleCalendarList[]>([]);
-  const calColorMap = useRef<Map<string, string>>(new Map());
 
-  // Build a stable color map from the fetched calendar list
-  useEffect(() => {
+  const calColorMap = useMemo(() => {
     const map = new Map<string, string>();
     calendarList.forEach((cal, idx) => {
       map.set(
@@ -166,7 +162,7 @@ export default function CalendarPage() {
         cal.backgroundColor ?? CALENDAR_PALETTE[idx % CALENDAR_PALETTE.length],
       );
     });
-    calColorMap.current = map;
+    return map;
   }, [calendarList]);
 
   // Resolve the "primary" sentinel to the actual calendar ID.
@@ -192,6 +188,8 @@ export default function CalendarPage() {
   // so the selector has the correct default before the user opens the form.
   useEffect(() => {
     if (calendarList.length === 0) return;
+    // The fetched list resolves Google's external "primary" alias for the form.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFormCalendarId(
       resolveCalendarId(
         calendarSettings.defaultCalendarId || "primary",
@@ -204,8 +202,8 @@ export default function CalendarPage() {
     if (event.colorId && EVENT_COLORS[event.colorId]) {
       return EVENT_COLORS[event.colorId];
     }
-    if (event.calendarId && calColorMap.current.has(event.calendarId)) {
-      return calColorMap.current.get(event.calendarId)!;
+    if (event.calendarId && calColorMap.has(event.calendarId)) {
+      return calColorMap.get(event.calendarId)!;
     }
     return "var(--color-accent)";
   }
@@ -252,6 +250,8 @@ export default function CalendarPage() {
     if (!calendarPrefill) return;
     const pf = calendarPrefill;
     const dateStr = parseDateHint(pf.dateHint);
+    // The prefill is an external command consumed into the form's local draft.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCreateDate(dateStr);
     setFormTitle(pf.title);
     setFormDesc(pf.description ?? "");

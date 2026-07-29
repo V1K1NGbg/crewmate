@@ -50,7 +50,6 @@ export function useCalendar() {
         setLoading(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [notify, calendarSettings.enabledCalendarIds],
   );
 
@@ -82,7 +81,6 @@ export function useCalendar() {
         return null;
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [notify, calendarSettings.defaultCalendarId],
   );
 

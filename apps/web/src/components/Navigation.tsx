@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Globe, Plus, X } from "lucide-react";
 import { useApp } from "@crewmate/state";
 import { PLUGINS, getPlugin } from "@/plugins/registry";
@@ -33,11 +33,11 @@ export default function Navigation() {
     x: number;
     y: number;
   } | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
   useEffect(() => {
     const close = () => setContextMenu(null);
