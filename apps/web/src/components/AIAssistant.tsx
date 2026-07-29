@@ -17,7 +17,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useApp } from "@crewmate/state";
-import { opencodeChat, detectOpencodeServer } from "@crewmate/lib";
+import { aiChat, detectAIServer } from "@crewmate/lib";
 import type { AssistantMessage, AssistantSession, AssistantAction } from "@crewmate/types";
 import { PLUGINS, getPlugin } from "@/plugins/registry";
 
@@ -135,8 +135,7 @@ export default function AIAssistant() {
     dispatch({ type: "SET_ACTIVE_ASSISTANT_SESSION", sessionId });
   }
 
-  function deleteSession(sessionId: string, e: React.MouseEvent) {
-    e.stopPropagation();
+  function deleteSession(sessionId: string) {
     dispatch({ type: "DELETE_ASSISTANT_SESSION", sessionId });
   }
 
@@ -153,7 +152,7 @@ export default function AIAssistant() {
       }
       if (targetPageId) {
         dispatch({ type: "SET_ACTIVE_PAGE", id: targetPageId });
-        dispatch({ type: "SET_OPENCODE_OVERLAY_OPEN", open: false });
+        dispatch({ type: "SET_AI_OVERLAY_OPEN", open: false });
       }
       return;
     }
@@ -181,7 +180,7 @@ export default function AIAssistant() {
       });
     }
     dispatch({ type: "SET_ACTIVE_PAGE", id: page.id });
-    dispatch({ type: "SET_OPENCODE_OVERLAY_OPEN", open: false });
+    dispatch({ type: "SET_AI_OVERLAY_OPEN", open: false });
     notify(
       `Navigated to ${plugin.label}${actionDef.buildPrefill ? " — pre-filled" : ""}`,
       "info",
@@ -206,8 +205,8 @@ export default function AIAssistant() {
     try {
       const context = buildPageContext(state);
       const fullPrompt = `[App Context]\n${context}\n\n[User Message]\n${text}${buildActionsSystemSuffix(state)}`;
-      const rawResponse = await opencodeChat(
-        state.opencodeUrl,
+      const rawResponse = await aiChat(
+        state.aiServerUrl,
         fullPrompt,
         state.assistantModel || undefined,
       );
@@ -227,7 +226,7 @@ export default function AIAssistant() {
         id: crypto.randomUUID(),
         role: "assistant",
         content:
-          "Sorry, I couldn't process that request. Make sure the opencode server is running.",
+          "Sorry, I couldn't process that request. Make sure your AI server is running and has a model loaded.",
         timestamp: new Date().toISOString(),
         sessionId: state.activeSessionId,
       };
@@ -241,7 +240,7 @@ export default function AIAssistant() {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
       onClick={() =>
-        dispatch({ type: "SET_OPENCODE_OVERLAY_OPEN", open: false })
+        dispatch({ type: "SET_AI_OVERLAY_OPEN", open: false })
       }
     >
       <div
@@ -266,10 +265,10 @@ export default function AIAssistant() {
           <div className="flex gap-1">
             <button
               onClick={async () => {
-                const url = await detectOpencodeServer(state.opencodeUrl);
+                const available = await detectAIServer(state.aiServerUrl);
                 dispatch({
-                  type: "SET_OPENCODE_AVAILABLE",
-                  available: !!url,
+                  type: "SET_AI_SERVER_AVAILABLE",
+                  available,
                 });
               }}
               className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
@@ -287,7 +286,7 @@ export default function AIAssistant() {
             <button
               onClick={() =>
                 dispatch({
-                  type: "SET_OPENCODE_OVERLAY_OPEN",
+                  type: "SET_AI_OVERLAY_OPEN",
                   open: false,
                 })
               }
@@ -300,21 +299,21 @@ export default function AIAssistant() {
         </div>
 
         {/* Messages */}
-        {!state.opencodeAvailable ? (
+        {!state.aiServerAvailable ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
             <div className="w-14 h-14 rounded-2xl bg-surface-2 border border-border flex items-center justify-center">
               <AlertCircle size={28} className="text-warning" />
             </div>
             <div>
               <p className="text-sm font-semibold text-text mb-1">
-                opencode not detected
+                AI server not detected
               </p>
               <p className="text-sm text-text-2 leading-relaxed">
-                Run{" "}
+                Start an OpenAI-compatible server, for example{" "}
                 <code className="bg-surface-2 border border-border-2 px-1.5 py-0.5 rounded text-xs font-mono text-accent">
-                  opencode serve --port 4096
+                  llama-server --port 8080
                 </code>{" "}
-                in your project directory
+                with a model loaded
               </p>
             </div>
           </div>
@@ -332,30 +331,34 @@ export default function AIAssistant() {
               </div>
               <div className="flex-1 overflow-y-auto py-2">
                 {state.assistantSessions.map((session) => (
-                  <button
+                  <div
                     key={session.id}
-                    onClick={() => switchSession(session.id)}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors group ${
+                    className={`group flex w-full items-center text-sm transition-colors ${
                       session.id === state.activeSessionId
                         ? "bg-surface-2 text-text"
                         : "text-text-2 hover:text-text hover:bg-surface/50"
                     }`}
                   >
-                    <MessageSquare size={14} className="flex-shrink-0" />
-                    <span className="truncate flex-1">
-                      {session.messages.length === 0
-                        ? session.title
-                        : generateTitle(session)}
-                    </span>
-                    {state.assistantSessions.length > 1 && (
-                      <button
-                        onClick={(e) => deleteSession(session.id, e)}
-                        className="opacity-0 group-hover:opacity-100 text-text-3 hover:text-danger transition-all p-1"
-                      >
-                        <X size={12} />
-                      </button>
-                    )}
-                  </button>
+                    <button
+                      onClick={() => switchSession(session.id)}
+                      className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-3 text-left"
+                    >
+                      <MessageSquare size={14} className="flex-shrink-0" />
+                      <span className="truncate flex-1">
+                        {session.messages.length === 0
+                          ? session.title
+                          : generateTitle(session)}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => deleteSession(session.id)}
+                      className="mr-2 p-1 text-text-3 opacity-0 transition-all hover:text-danger focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                      aria-label={`Delete ${generateTitle(session)}`}
+                      title="Delete conversation"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
@@ -448,7 +451,7 @@ export default function AIAssistant() {
         )}
 
         {/* Input */}
-        {state.opencodeAvailable && (
+        {state.aiServerAvailable && (
           <label
             className="flex gap-3 items-center bg-surface-2 rounded-xl mx-6 mb-4 cursor-text"
             style={{

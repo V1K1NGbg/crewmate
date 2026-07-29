@@ -19,6 +19,10 @@ import type {
   AssistantSession,
   FeaturePackageInfo,
 } from "@crewmate/types";
+import {
+  initializeAssistantSessions,
+  removeAssistantSession,
+} from "./assistantSessions";
 
 /* ------------------------------------------------------------------ */
 /* State & actions                                                     */
@@ -29,10 +33,10 @@ const STORAGE_KEY = "crewmate-state";
 export interface AppState {
   pages: Page[];
   activePage: string;
-  opencodeUrl: string;
+  aiServerUrl: string;
   assistantModel: string;
-  opencodeOverlayOpen: boolean;
-  opencodeAvailable: boolean;
+  aiOverlayOpen: boolean;
+  aiServerAvailable: boolean;
   notification: AppNotification | null;
   pageSettings: PageSettings;
   assistantSessions: AssistantSession[];
@@ -54,10 +58,10 @@ export type Action =
   | { type: "SET_ACTIVE_PAGE"; id: string }
   | { type: "ADD_PAGE"; page: Omit<Page, "keybinding"> }
   | { type: "REMOVE_PAGE"; id: string }
-  | { type: "SET_OPENCODE_OVERLAY_OPEN"; open: boolean }
-  | { type: "SET_OPENCODE_URL"; url: string }
+  | { type: "SET_AI_OVERLAY_OPEN"; open: boolean }
+  | { type: "SET_AI_SERVER_URL"; url: string }
   | { type: "SET_ASSISTANT_MODEL"; model: string }
-  | { type: "SET_OPENCODE_AVAILABLE"; available: boolean }
+  | { type: "SET_AI_SERVER_AVAILABLE"; available: boolean }
   | { type: "SET_NOTIFICATION"; notification: AppNotification | null }
   | { type: "SET_FEATURE_DATA"; featureId: string; data: unknown }
   | { type: "SET_PAGE_PREFILL"; pageId: string; prefill: unknown }
@@ -139,14 +143,14 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, pages, activePage };
     }
 
-    case "SET_OPENCODE_OVERLAY_OPEN":
-      return { ...state, opencodeOverlayOpen: action.open };
-    case "SET_OPENCODE_URL":
-      return { ...state, opencodeUrl: action.url };
+    case "SET_AI_OVERLAY_OPEN":
+      return { ...state, aiOverlayOpen: action.open };
+    case "SET_AI_SERVER_URL":
+      return { ...state, aiServerUrl: action.url };
     case "SET_ASSISTANT_MODEL":
       return { ...state, assistantModel: action.model };
-    case "SET_OPENCODE_AVAILABLE":
-      return { ...state, opencodeAvailable: action.available };
+    case "SET_AI_SERVER_AVAILABLE":
+      return { ...state, aiServerAvailable: action.available };
 
     case "SET_NOTIFICATION":
       return { ...state, notification: action.notification };
@@ -234,17 +238,17 @@ function reducer(state: AppState, action: Action): AppState {
         assistantSessions: [action.session, ...state.assistantSessions],
         activeSessionId: action.session.id,
       };
-    case "DELETE_ASSISTANT_SESSION":
+    case "DELETE_ASSISTANT_SESSION": {
+      const assistantState = removeAssistantSession(
+        state.assistantSessions,
+        state.activeSessionId,
+        action.sessionId,
+      );
       return {
         ...state,
-        assistantSessions: state.assistantSessions.filter(
-          (s) => s.id !== action.sessionId,
-        ),
-        activeSessionId:
-          state.activeSessionId === action.sessionId
-            ? (state.assistantSessions[0]?.id ?? null)
-            : state.activeSessionId,
+        ...assistantState,
       };
+    }
 
     case "SET_PANEL_WIDTH":
       return {
@@ -316,31 +320,40 @@ export function AppProvider({
   initialFeatureSettings?: Record<string, unknown>;
 }) {
   const saved = typeof window !== "undefined" ? loadPersisted() : {};
+  const legacySaved = saved as Partial<AppState> & { opencodeUrl?: string };
+  const currentAIServerUrl =
+    typeof saved.aiServerUrl === "string" ? saved.aiServerUrl : null;
+  const hasCurrentAISettings = currentAIServerUrl !== null;
+  const legacyAIServerUrl =
+    legacySaved.opencodeUrl &&
+    legacySaved.opencodeUrl !== "http://localhost:4096"
+      ? legacySaved.opencodeUrl
+      : null;
+  const savedAIServerUrl =
+    currentAIServerUrl ??
+    legacyAIServerUrl ??
+    "http://127.0.0.1:8080/v1";
+  const initialAssistantState = initializeAssistantSessions(
+    saved.assistantSessions,
+    saved.activeSessionId,
+  );
 
   const [state, dispatch] = useReducer(reducer, {
     pages: (saved.pages as Page[]) ?? initialPages ?? [],
     activePage:
       (saved.activePage as string) ?? initialPages?.[0]?.id ?? "",
-    opencodeUrl: (saved.opencodeUrl as string) ?? "http://localhost:4096",
-    assistantModel: (saved.assistantModel as string) ?? "",
-    opencodeOverlayOpen: false,
-    opencodeAvailable: false,
+    aiServerUrl: savedAIServerUrl,
+    assistantModel: hasCurrentAISettings
+      ? ((saved.assistantModel as string) ?? "")
+      : "",
+    aiOverlayOpen: false,
+    aiServerAvailable: false,
     notification: null,
     pageSettings: migratePageSettings(
       saved.pageSettings as Partial<PageSettings> | undefined,
       initialFeatureSettings ?? {},
     ),
-    assistantSessions: (saved.assistantSessions as AssistantSession[])?.[0]?.id
-      ? (saved.assistantSessions as AssistantSession[])
-      : [
-          {
-            id: `session-${Date.now()}`,
-            title: "New conversation",
-            createdAt: new Date().toISOString(),
-            messages: [],
-          },
-        ],
-    activeSessionId: (saved.activeSessionId as string) ?? null,
+    ...initialAssistantState,
     panelWidths: (saved.panelWidths as Record<string, number>) ?? {},
     installedFeatures: initialInstalledFeatures ?? [],
     featureData: {},
@@ -366,7 +379,7 @@ export function AppProvider({
       JSON.stringify({
         pages: state.pages,
         activePage: state.activePage,
-        opencodeUrl: state.opencodeUrl,
+        aiServerUrl: state.aiServerUrl,
         assistantModel: state.assistantModel,
         pageSettings: state.pageSettings,
         panelWidths: state.panelWidths,
@@ -377,7 +390,7 @@ export function AppProvider({
   }, [
     state.pages,
     state.activePage,
-    state.opencodeUrl,
+    state.aiServerUrl,
     state.assistantModel,
     state.pageSettings,
     state.panelWidths,

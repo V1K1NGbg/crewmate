@@ -35,14 +35,14 @@ export default function TopBar({
         <button
           onClick={() =>
             dispatch({
-              type: "SET_OPENCODE_OVERLAY_OPEN",
-              open: !state.opencodeOverlayOpen,
+              type: "SET_AI_OVERLAY_OPEN",
+              open: !state.aiOverlayOpen,
             })
           }
           title="Toggle AI assistant (O)"
           style={{ padding: "2px 12px" }}
           className={`flex items-center gap-1.5 text-sm rounded-lg border transition-all duration-200 ${
-            state.opencodeOverlayOpen
+            state.aiOverlayOpen
               ? "bg-accent/10 text-accent border-accent/20"
               : "text-text-3 border-transparent hover:text-text-2 hover:bg-surface-2/50"
           }`}
@@ -51,7 +51,7 @@ export default function TopBar({
           <Circle
             size={6}
             className={
-              state.opencodeAvailable
+              state.aiServerAvailable
                 ? "fill-success text-success"
                 : "fill-text-3 text-text-3"
             }

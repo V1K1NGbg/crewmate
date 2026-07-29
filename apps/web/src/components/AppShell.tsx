@@ -2,7 +2,7 @@
 
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useApp } from "@crewmate/state";
-import { detectOpencodeServer } from "@crewmate/lib";
+import { detectAIServer } from "@crewmate/lib";
 import Navigation from "./Navigation";
 import TopBar from "./TopBar";
 import Notification from "./Notification";
@@ -25,10 +25,10 @@ export default function AppShell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
-    detectOpencodeServer(state.opencodeUrl).then((url) => {
-      dispatch({ type: "SET_OPENCODE_AVAILABLE", available: !!url });
+    detectAIServer(state.aiServerUrl).then((available) => {
+      dispatch({ type: "SET_AI_SERVER_AVAILABLE", available });
     });
-  }, [state.opencodeUrl, dispatch]);
+  }, [state.aiServerUrl, dispatch]);
 
   // Defense in depth: if installed-feature info wasn't provided server-side
   // for some reason, fetch it once client-side so the Packages settings
@@ -67,8 +67,8 @@ export default function AppShell() {
       if (e.key === "o" && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         dispatch({
-          type: "SET_OPENCODE_OVERLAY_OPEN",
-          open: !state.opencodeOverlayOpen,
+          type: "SET_AI_OVERLAY_OPEN",
+          open: !state.aiOverlayOpen,
         });
         return;
       }
@@ -78,9 +78,9 @@ export default function AppShell() {
         return;
       }
       if (e.key === "Escape") {
-        if (state.opencodeOverlayOpen) {
+        if (state.aiOverlayOpen) {
           dispatch({
-            type: "SET_OPENCODE_OVERLAY_OPEN",
+            type: "SET_AI_OVERLAY_OPEN",
             open: false,
           });
         } else if (settingsOpen) {
@@ -90,7 +90,7 @@ export default function AppShell() {
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [state.pages, state.opencodeOverlayOpen, settingsOpen, dispatch]);
+  }, [state.pages, state.aiOverlayOpen, settingsOpen, dispatch]);
 
   const activePage =
     state.pages.find((p) => p.id === state.activePage) ?? state.pages[0];
@@ -131,7 +131,7 @@ export default function AppShell() {
               </div>
             )}
           </Suspense>
-          {state.opencodeOverlayOpen && (
+          {state.aiOverlayOpen && (
             <Suspense fallback={null}>
               <AIAssistant />
             </Suspense>

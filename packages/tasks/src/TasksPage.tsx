@@ -18,7 +18,7 @@ import {
 import { format } from "date-fns";
 import { useSession } from "next-auth/react";
 import { useApp } from "@crewmate/state";
-import { opencodeChat } from "@crewmate/lib";
+import { aiChat } from "@crewmate/lib";
 import type { TaskPrefill } from "@crewmate/types";
 import {
   useTasks,
@@ -161,8 +161,8 @@ export default function TasksPage() {
   }
 
   async function handleAIExpand(task: GoogleTask) {
-    if (!state.opencodeAvailable || !listId) {
-      notify("opencode server not available", "error");
+    if (!state.aiServerAvailable || !listId) {
+      notify("AI server not available", "error");
       return;
     }
     setExpandingId(task.id);
@@ -173,7 +173,11 @@ export default function TasksPage() {
       if (emailContext)
         contextLines.push(`\nEmail context:\n${emailContext}`);
       const prompt = `Break down the following task into exactly 5 concrete, actionable subtasks. Return ONLY a plain numbered list (1. ... 2. ... etc.), no markdown headers, no explanation, nothing else.\n\n${contextLines.join("\n")}`;
-      const response = await opencodeChat(state.opencodeUrl, prompt);
+      const response = await aiChat(
+        state.aiServerUrl,
+        prompt,
+        state.assistantModel || undefined,
+      );
       const lines = response
         .split("\n")
         .map((l) =>

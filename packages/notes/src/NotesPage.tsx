@@ -16,7 +16,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useSession } from "next-auth/react";
 import { useApp } from "@crewmate/state";
-import { opencodeChat } from "@crewmate/lib";
+import { aiChat } from "@crewmate/lib";
 import type { NotePrefill } from "@crewmate/types";
 import { useNotes, docToAppNotes } from "./useNotes";
 import { DEFAULT_NOTES_SETTINGS, type NotesPluginSettings } from "./settings";
@@ -114,14 +114,18 @@ export default function NotesPage() {
   }, [state.pageSettings.general.autoRefreshInterval, refreshDoc, docId]);
 
   async function handleAISummarize() {
-    if (!state.opencodeAvailable) {
-      notify("opencode server not available", "error");
+    if (!state.aiServerAvailable) {
+      notify("AI server not available", "error");
       return;
     }
     setSummarizing(true);
     try {
       const prompt = `Summarize the following note concisely in 2-4 sentences. Return ONLY the summary text, no preamble, no markdown headers.\n\n---\n${content.slice(0, 4000)}`;
-      const summary = await opencodeChat(state.opencodeUrl, prompt);
+      const summary = await aiChat(
+        state.aiServerUrl,
+        prompt,
+        state.assistantModel || undefined,
+      );
       const timestamp = new Date().toLocaleString();
       appendContent(
         `\n\n---\n\n### Summary\n\n> Generated on ${timestamp}\n\n${summary}\n`,
@@ -136,14 +140,18 @@ export default function NotesPage() {
   }
 
   async function handleApplyTemplate() {
-    if (!state.opencodeAvailable) {
-      notify("opencode server not available", "error");
+    if (!state.aiServerAvailable) {
+      notify("AI server not available", "error");
       return;
     }
     setApplyingTemplate(true);
     try {
       const prompt = NOTE_TEMPLATE_PROMPT(content.slice(0, 6000));
-      const result = await opencodeChat(state.opencodeUrl, prompt);
+      const result = await aiChat(
+        state.aiServerUrl,
+        prompt,
+        state.assistantModel || undefined,
+      );
       lastContentRef.current = content;
       setContent(result);
       setDirty(true);

@@ -1,6 +1,6 @@
 # Crewmate
 
-An AI-powered dashboard that integrates your Email, Calendar, Notes, and Tasks into a single interface — with integrated AI assistant overlay powered by [Opencode](https://opencode.ai).
+An AI-powered dashboard that integrates your Email, Calendar, Notes, and Tasks into a single interface, with an assistant that connects to any OpenAI-compatible API.
 
 ---
 
@@ -10,7 +10,7 @@ An AI-powered dashboard that integrates your Email, Calendar, Notes, and Tasks i
 - **Calendar** — View and create Calendar events with natural language
 - **Notes** — Personal notes synced to a Google Doc with **inline Markdown preview** — click to edit, press `Esc` to return to preview
 - **Tasks** — Create, organize, and track Google Tasks with collapsible subtasks, AI-powered task breakdown, due dates, and status toggling
-- **AI Assistant** — Centered overlay popup (90% viewport) with blur backdrop, full context awareness of emails, events, notes, and tasks; powered by Opencode
+- **AI Assistant** — Centered overlay popup (90% viewport) with blur backdrop and context awareness of emails, events, notes, and tasks
 - **Settings** — Centered modal with sidebar navigation and per-section configuration (General, AI Assistant, Gmail, Calendar, Notes, Tasks)
 - **Custom Pages** — Add any URL as a tab in the sidebar, embedded as an iframe
 - **Keyboard Shortcuts** — `1`–`9` to switch pages, `O` to toggle AI panel, `Esc` to close overlays
@@ -28,7 +28,7 @@ An AI-powered dashboard that integrates your Email, Calendar, Notes, and Tasks i
 | Language | TypeScript 5 |
 | Auth | NextAuth v5 (Google OAuth) |
 | Google APIs | Gmail, Calendar, Docs, Drive, Tasks |
-| AI | Opencode server (optional) |
+| AI | OpenAI-compatible API, including local `llama-server` |
 
 ---
 
@@ -49,9 +49,6 @@ Create a `.env.local` file in the project root:
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 AUTH_SECRET=a-random-secret-string
-
-# Optional: Opencode AI server URL (auto-detects localhost:4096–4098 if not set)
-NEXT_PUBLIC_OPENCODE_URL=http://localhost:4096
 ```
 
 ---
@@ -105,7 +102,7 @@ packages/
 ├── types/       (@crewmate/types)    # Shared TS types used by every package (Page, Note, Task,
 │                                       CalendarEvent, GmailThread, PageSettings, ColorScheme, ...)
 ├── state/       (@crewmate/state)    # AppContext — the global reducer/dispatch all 4 menus share
-├── lib/         (@crewmate/lib)      # opencode.ts, useResizable.ts (client-safe: default export)
+├── lib/         (@crewmate/lib)      # AI API client, resizing, and settings helpers
 │                                       google.ts, googleApiError.ts (server-only: "@crewmate/lib/server")
 ├── mail/        (@crewmate/mail)     # GmailPage.tsx + useGmail.ts
 ├── calendar/    (@crewmate/calendar) # CalendarPage.tsx + useCalendar.ts + calendar settings/date helpers
@@ -141,7 +138,23 @@ packages/
 
 ## AI Assistant
 
-The AI Assistant uses an [Opencode](https://opencode.ai) server for natural language interactions. It opens as a centered overlay popup (90% of the viewport) with a blurred backdrop — click outside or press `Esc` to dismiss. It is loaded with context from all active pages (recent emails, upcoming events, notes content, task list) so it can answer questions and take actions on your behalf.
+The AI Assistant connects directly to an OpenAI-compatible API. It defaults to
+`http://127.0.0.1:8080/v1`, the default local `llama-server` address used by
+Crewmate. Start a local server with a loaded model, then choose the model in
+**Settings → AI Assistant**:
+
+```bash
+llama-server -m /path/to/model.gguf --alias local-model --port 8080
+```
+
+Crewmate discovers models with `GET /v1/models` and sends prompts with
+`POST /v1/chat/completions`. Other compatible servers can be used by changing
+the API base URL. API-key authentication is not implemented yet.
+
+The assistant opens as a centered overlay popup (90% of the viewport) with a
+blurred backdrop — click outside or press `Esc` to dismiss. It is loaded with
+context from all active pages (recent emails, upcoming events, notes content,
+task list) so it can answer questions and take actions on your behalf.
 
 ---
 
@@ -158,6 +171,6 @@ Content appended via AI summarization or cross-page prefills uses structured Mar
 Tasks are synced with Google Tasks. Each task supports:
 
 - Status toggling (pending / completed)
-- AI-powered breakdown into subtasks (via Opencode)
+- AI-powered breakdown into subtasks
 - Collapsible subtask list (show/hide with the expand button)
 - Due dates, notes, and calendar integration

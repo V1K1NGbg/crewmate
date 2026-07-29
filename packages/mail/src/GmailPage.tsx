@@ -26,7 +26,7 @@ import {
 import { format } from "date-fns";
 import { useSession, signIn } from "next-auth/react";
 import { useApp } from "@crewmate/state";
-import { opencodeChat, useResizable } from "@crewmate/lib";
+import { aiChat, useResizable } from "@crewmate/lib";
 import { useGmail, type GmailMessage } from "./useGmail";
 
 /* ------------------------------------------------------------------ */
@@ -384,7 +384,7 @@ export default function GmailPage() {
       gmail.setThreads((prev) =>
         prev.map((x) => (x.id === id ? { ...x, unread: false } : x)),
       );
-      if (!cached && state.opencodeAvailable && msgs.length > 0)
+      if (!cached && state.aiServerAvailable && msgs.length > 0)
         generateAIActions(id, msgs);
     } finally {
       setThreadLoading(false);
@@ -425,8 +425,8 @@ Date: ${latest.date}
 Body: ${bodyText}
 
 Example: [{"type":"create_event","label":"Schedule meeting","description":"Creates a calendar event for the meeting mentioned on March 15th with the project team.","payload":{"title":"Team Meeting","description":"Discuss Q1 results","dateHint":"2024-03-15","startHint":"2024-03-15T14:00:00","endHint":"2024-03-15T15:00:00"}}]`;
-      const response = await opencodeChat(
-        state.opencodeUrl,
+      const response = await aiChat(
+        state.aiServerUrl,
         prompt,
         state.assistantModel || undefined,
       );
@@ -1103,11 +1103,11 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                 </div>
               )}
               <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-                {!state.opencodeAvailable ? (
+                {!state.aiServerAvailable ? (
                   <div className="flex flex-col items-center justify-center gap-3 py-8 px-3 text-center">
                     <Sparkles size={20} className="text-text-3" />
                     <p className="text-xs text-text-3 leading-relaxed">
-                      OpenCode not connected.
+                      AI server not connected.
                       <br />
                       Press{" "}
                       <kbd className="bg-surface-2 border border-border-2 rounded px-1 text-xs">

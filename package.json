@@ -10,7 +10,8 @@
         "dev": "npm run dev --workspace=@crewmate/web",
         "build": "npm run build --workspace=@crewmate/web",
         "start": "npm run start --workspace=@crewmate/web",
-        "lint": "npm run lint --workspace=@crewmate/web"
+        "lint": "npm run lint --workspace=@crewmate/web",
+        "test": "node --test packages/lib/src/ai.test.ts packages/state/src/assistantSessions.test.ts"
     },
     "devDependencies": {
         "@types/node": "^26.1.2",

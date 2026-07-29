@@ -14,14 +14,13 @@ import {
   PackageX,
 } from "lucide-react";
 import { useApp } from "@crewmate/state";
-import { fetchOpencodeModels, SettingRow } from "@crewmate/lib";
+import { fetchAIModels, normalizeAIServerUrl, SettingRow } from "@crewmate/lib";
 import { COLOR_SCHEMES } from "@crewmate/types";
 import type { FeaturePackageId, FeaturePlugin, Page } from "@crewmate/types";
 import { PLUGINS } from "@/plugins/registry";
 
 interface ModelOption {
-  providerId: string;
-  modelId: string;
+  id: string;
   label: string;
 }
 
@@ -90,7 +89,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   }
 
   // AI state
-  const [urlDraft, setUrlDraft] = useState(state.opencodeUrl);
+  const [urlDraft, setUrlDraft] = useState(state.aiServerUrl);
   const [modelDraft, setModelDraft] = useState(state.assistantModel);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -99,17 +98,31 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   async function loadModels() {
     setModelsLoading(true);
     try {
-      const list = await fetchOpencodeModels(urlDraft);
-      if (list.length > 0) setModels(list);
-    } catch {
-      /* ignore */
+      const list = await fetchAIModels(urlDraft);
+      setModels(list);
+      if (list.length === 0) {
+        notify("The AI server did not report any loaded models", "error");
+      }
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : "Could not reach AI server",
+        "error",
+      );
     } finally {
       setModelsLoading(false);
     }
   }
 
   function saveAI() {
-    dispatch({ type: "SET_OPENCODE_URL", url: urlDraft });
+    let normalizedUrl: string;
+    try {
+      normalizedUrl = normalizeAIServerUrl(urlDraft);
+    } catch {
+      notify("Enter a valid AI server URL", "error");
+      return;
+    }
+    setUrlDraft(normalizedUrl);
+    dispatch({ type: "SET_AI_SERVER_URL", url: normalizedUrl });
     dispatch({ type: "SET_ASSISTANT_MODEL", model: modelDraft });
     setShowAssistantDropdown(false);
     notify("AI settings saved", "success");
@@ -376,29 +389,26 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
 
                 {resolvedActiveSection === "ai" && (
                   <>
-                    <SettingRow label="Server URL">
+                    <SettingRow
+                      label="API base URL"
+                      description="OpenAI-compatible API, including its /v1 path"
+                    >
                       <input
                         className="settings-input"
                         value={urlDraft}
-                        onChange={(e) => setUrlDraft(e.target.value)}
-                        placeholder="http://localhost:4096"
+                        onChange={(e) => {
+                          setUrlDraft(e.target.value);
+                          setModels([]);
+                          setShowAssistantDropdown(false);
+                        }}
+                        placeholder="http://127.0.0.1:8080/v1"
                       />
                     </SettingRow>
 
                     {/* Model picker */}
                     <SettingRow
                       label="Model"
-                      description={
-                        <>
-                          Model used for all AI features — chat assistant, email
-                          suggestions, task breakdown, and more.{" "}
-                          <span className="text-text-muted">
-                            Append <code>:none</code> or <code>:low</code> to
-                            disable/reduce thinking for local models (e.g.{" "}
-                            <code>ollama/...:none</code>).
-                          </span>
-                        </>
-                      }
+                      description="Model used for all AI features. Leave blank to use the first model reported by the server."
                     >
                       <div className="flex gap-2">
                         <input
@@ -497,7 +507,7 @@ function ModelDropdown({
         Default (server picks)
       </button>
       {models.map((m) => {
-        const val = `${m.providerId}/${m.modelId}`;
+        const val = m.id;
         return (
           <button
             key={val}
@@ -509,7 +519,7 @@ function ModelDropdown({
             )}
             <div className="min-w-0">
               <div className="truncate">{m.label}</div>
-              <div className="text-xs text-text-3 truncate">{m.modelId}</div>
+              <div className="text-xs text-text-3 truncate">{m.id}</div>
             </div>
           </button>
         );
