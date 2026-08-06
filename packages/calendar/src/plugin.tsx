@@ -50,6 +50,10 @@ export const calendarPlugin: FeaturePlugin<CalendarPluginSettings> = {
       icon: ExternalLink,
       promptHint:
         '{"type":"open_event","label":"View event","payload":{"eventId":"..."}}',
+      buildPrefill: (payload) => ({
+        title: "Event",
+        eventId: payload?.eventId,
+      }),
     },
   ],
 };

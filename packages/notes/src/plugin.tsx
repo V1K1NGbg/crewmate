@@ -1,5 +1,5 @@
 import { lazy } from "react";
-import { FileText } from "lucide-react";
+import { FilePlus, FileText } from "lucide-react";
 import type { FeaturePlugin, Note } from "@crewmate/types";
 import { DEFAULT_NOTES_SETTINGS, type NotesPluginSettings } from "./settings";
 
@@ -28,4 +28,18 @@ export const notesPlugin: FeaturePlugin<NotesPluginSettings> = {
   defaultSettings: DEFAULT_NOTES_SETTINGS,
   SettingsSection: lazy(() => import("./NotesSettingsSection")),
   buildAssistantContext,
+  assistantActions: [
+    {
+      type: "add_note",
+      icon: FilePlus,
+      promptHint:
+        '{"type":"add_note","label":"Add to notes","payload":{"title":"...","content":"..."}}',
+      buildPrefill: (payload) => ({
+        title: payload?.title ?? "Assistant note",
+        content: payload?.content ?? "",
+        category: "Assistant notes",
+        source: "assistant",
+      }),
+    },
+  ],
 };

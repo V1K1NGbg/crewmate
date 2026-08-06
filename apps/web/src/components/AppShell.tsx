@@ -23,6 +23,21 @@ function PageFallback() {
 export default function AppShell() {
   const { state, dispatch } = useApp();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const rawMailSettings = state.pageSettings.features.mail;
+  const mailSettings =
+    rawMailSettings && typeof rawMailSettings === "object"
+      ? (rawMailSettings as Record<string, unknown>)
+      : {};
+  const quickReviewEnabled = mailSettings.quickReviewEnabled === true;
+  const configuredQuickReviewToggleKey =
+    typeof mailSettings.quickReviewToggleKey === "string"
+      ? mailSettings.quickReviewToggleKey.toLowerCase()
+      : "";
+  const quickReviewToggleKey = /^[a-z0-9]$/.test(
+    configuredQuickReviewToggleKey,
+  )
+    ? configuredQuickReviewToggleKey
+    : "r";
 
   useEffect(() => {
     detectAIServer(state.aiServerUrl).then((available) => {
@@ -55,6 +70,27 @@ export default function AppShell() {
         tag === "SELECT" ||
         (e.target as HTMLElement).isContentEditable;
       if (isEditing) return;
+
+      if (
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === quickReviewToggleKey
+      ) {
+        e.preventDefault();
+        const enabled = !quickReviewEnabled;
+        dispatch({
+          type: "UPDATE_FEATURE_SETTINGS",
+          featureId: "mail",
+          settings: { quickReviewEnabled: enabled },
+        });
+        if (enabled) {
+          const mailPage = state.pages.find((page) => page.type === "mail");
+          if (mailPage) dispatch({ type: "SET_ACTIVE_PAGE", id: mailPage.id });
+        }
+        return;
+      }
 
       if (!e.ctrlKey && !e.metaKey && !e.altKey && /^[1-9]$/.test(e.key)) {
         const page = state.pages.find((p) => p.keybinding === e.key);
@@ -90,13 +126,23 @@ export default function AppShell() {
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [state.pages, state.aiOverlayOpen, settingsOpen, dispatch]);
+  }, [
+    state.pages,
+    state.aiOverlayOpen,
+    settingsOpen,
+    dispatch,
+    quickReviewEnabled,
+    quickReviewToggleKey,
+  ]);
 
   const activePage =
     state.pages.find((p) => p.id === state.activePage) ?? state.pages[0];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg">
+    <div
+      className="crewmate-app flex h-screen overflow-hidden bg-bg"
+      data-component-spacing={state.pageSettings.general.componentSpacing}
+    >
       <Navigation />
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         <TopBar
@@ -160,6 +206,12 @@ export default function AppShell() {
             </button>
           ))}
           <span className="ml-auto flex items-center gap-3 text-xs text-text-3">
+            <span className="flex items-center gap-1.5">
+              <kbd className="font-mono text-xs uppercase opacity-60">
+                {quickReviewToggleKey}
+              </kbd>
+              <span>Review {quickReviewEnabled ? "on" : "off"}</span>
+            </span>
             <span className="flex items-center gap-1.5">
               <kbd className="font-mono text-xs opacity-60">O</kbd>
               <span>AI</span>

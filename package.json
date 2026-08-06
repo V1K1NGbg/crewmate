@@ -10,8 +10,11 @@
         "dev": "npm run dev --workspace=@crewmate/web",
         "build": "npm run build --workspace=@crewmate/web",
         "start": "npm run start --workspace=@crewmate/web",
-        "lint": "npm run lint --workspace=@crewmate/web",
-        "test": "node --test packages/lib/src/ai.test.ts packages/state/src/assistantSessions.test.ts"
+        "lint": "eslint --config apps/web/eslint.config.mjs apps/web/src packages",
+        "typecheck": "tsc -p apps/web/tsconfig.json --noEmit --pretty false",
+        "test": "node --test packages/*/src/*.test.ts",
+        "check": "npm run lint && npm run typecheck && npm test",
+        "check:all": "npm run check && npm run build"
     },
     "devDependencies": {
         "@types/node": "^26.1.2",

@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Globe, Plus, X } from "lucide-react";
-import { useApp } from "@crewmate/state";
-import { PLUGINS, getPlugin } from "@/plugins/registry";
+import { Globe, Pencil, Plus, Trash2, X } from "lucide-react";
+import { normalizeCustomPageUrl, useApp } from "@crewmate/state";
+import { getPlugin } from "@/plugins/registry";
 
 interface AddPageModalState {
   open: boolean;
-  type: string;
+  pageId: string | null;
   label: string;
   url: string;
 }
@@ -17,14 +17,15 @@ function iconForPage(pageType: string) {
 }
 
 function colorForPage(pageType: string) {
-  return getPlugin(pageType)?.color ?? "";
+  const plugin = getPlugin(pageType);
+  return plugin ? `var(--color-${plugin.id}, ${plugin.color})` : "";
 }
 
 export default function Navigation() {
   const { state, dispatch } = useApp();
   const [modal, setModal] = useState<AddPageModalState>({
     open: false,
-    type: "custom",
+    pageId: null,
     label: "",
     url: "",
   });
@@ -46,23 +47,40 @@ export default function Navigation() {
   }, []);
 
   function addPage() {
-    if (!modal.label.trim()) return;
+    const url = normalizeCustomPageUrl(modal.url);
+    if (!modal.label.trim() || !url) {
+      return;
+    }
+    if (modal.pageId) {
+      dispatch({
+        type: "UPDATE_PAGE",
+        id: modal.pageId,
+        updates: { label: modal.label, url },
+      });
+      setModal({ open: false, pageId: null, label: "", url: "" });
+      return;
+    }
     const id = `custom-${Date.now()}`;
     dispatch({
       type: "ADD_PAGE",
       page: {
         id,
-        type: modal.type,
+        type: "custom",
         label: modal.label.trim(),
-        url: modal.type === "custom" ? modal.url : undefined,
+        url,
       },
     });
-    setModal({ open: false, type: "custom", label: "", url: "" });
+    setModal({ open: false, pageId: null, label: "", url: "" });
   }
 
-  const enabledPlugins = PLUGINS.filter((p) =>
-    state.pages.some((page) => page.type === p.id),
-  );
+  function removePage(pageId: string) {
+    dispatch({ type: "REMOVE_PAGE", id: pageId });
+    setContextMenu(null);
+  }
+
+  const contextPage = contextMenu
+    ? state.pages.find((page) => page.id === contextMenu.pageId)
+    : undefined;
 
   return (
     <>
@@ -73,50 +91,55 @@ export default function Navigation() {
           const pageColor = colorForPage(page.type);
           const activeColor = pageColor || "var(--color-accent)";
           return (
-            <button
+            <div
               key={page.id}
-              onClick={() =>
-                dispatch({
-                  type: "SET_ACTIVE_PAGE",
-                  id: page.id,
-                })
-              }
+              className="relative"
               onContextMenu={(e) => {
-                if (page.type === "custom") {
-                  e.preventDefault();
-                  setContextMenu({
-                    pageId: page.id,
-                    x: e.clientX,
-                    y: e.clientY,
-                  });
-                }
+                e.preventDefault();
+                setContextMenu({
+                  pageId: page.id,
+                  x: e.clientX,
+                  y: e.clientY,
+                });
               }}
-              title={`${page.label}  [${page.keybinding}]`}
-              className={`relative w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
-                isActive ? "" : "hover:bg-surface-2/50"
-              }`}
-              style={
-                isActive
-                  ? {
-                      color: activeColor,
-                      backgroundColor: `color-mix(in srgb, ${activeColor} 12%, transparent)`,
-                    }
-                  : pageColor
-                    ? { color: pageColor, opacity: 0.7 }
-                    : undefined
-              }
             >
-              <Icon
-                size={20}
-                className={!isActive && !pageColor ? "text-text-3" : undefined}
-              />
-              {isActive && (
-                <div
-                  className="absolute left-0 top-2 bottom-2 w-[2px] rounded-r-full"
-                  style={{ backgroundColor: activeColor }}
+              <button
+                onClick={() =>
+                  dispatch({
+                    type: "SET_ACTIVE_PAGE",
+                    id: page.id,
+                  })
+                }
+                title={`${page.label}  [${page.keybinding}]`}
+                aria-label={`Open ${page.label}`}
+                className={`relative w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
+                  isActive ? "" : "hover:bg-surface-2/50"
+                }`}
+                style={
+                  isActive
+                    ? {
+                        color: activeColor,
+                        backgroundColor: `color-mix(in srgb, ${activeColor} 12%, transparent)`,
+                      }
+                    : pageColor
+                      ? { color: pageColor, opacity: 0.7 }
+                      : undefined
+                }
+              >
+                <Icon
+                  size={20}
+                  className={
+                    !isActive && !pageColor ? "text-text-3" : undefined
+                  }
                 />
-              )}
-            </button>
+                {isActive && (
+                  <div
+                    className="absolute left-0 top-2 bottom-2 w-[2px] rounded-r-full"
+                    style={{ backgroundColor: activeColor }}
+                  />
+                )}
+              </button>
+            </div>
           );
         })}
         <div className="flex-1" />
@@ -124,7 +147,7 @@ export default function Navigation() {
           onClick={() =>
             setModal({
               open: true,
-              type: "custom",
+              pageId: null,
               label: "",
               url: "",
             })
@@ -146,17 +169,29 @@ export default function Navigation() {
           }}
           onClick={(e) => e.stopPropagation()}
         >
+          {contextPage?.type === "custom" && (
+            <>
+              <button
+                onClick={() => {
+                  setModal({
+                    open: true,
+                    pageId: contextPage.id,
+                    label: contextPage.label,
+                    url: contextPage.url ?? "",
+                  });
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-text-2 hover:bg-surface-2 hover:text-text"
+              >
+                <Pencil size={13} /> Edit page
+              </button>
+            </>
+          )}
           <button
-            onClick={() => {
-              dispatch({
-                type: "REMOVE_PAGE",
-                id: contextMenu.pageId,
-              });
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3 py-1.5 text-sm text-danger hover:bg-danger/10 rounded-lg transition-colors"
+            onClick={() => removePage(contextMenu.pageId)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-danger hover:bg-danger/10"
           >
-            Remove page
+            <Trash2 size={13} /> Remove page
           </button>
         </div>
       )}
@@ -175,7 +210,9 @@ export default function Navigation() {
             }}
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <span className="text-sm font-semibold text-text">Add page</span>
+              <span className="text-sm font-semibold text-text">
+                {modal.pageId ? "Edit page" : "Add page"}
+              </span>
               <button
                 onClick={() => setModal((m) => ({ ...m, open: false }))}
                 className="w-7 h-7 flex items-center justify-center text-text-3 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
@@ -184,30 +221,6 @@ export default function Navigation() {
               </button>
             </div>
             <div className="flex flex-col gap-3 p-5">
-              <div className="flex gap-2 flex-wrap">
-                {[
-                  { id: "custom", label: "Custom" },
-                  ...enabledPlugins.map((p) => ({ id: p.id, label: p.label })),
-                ].map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() =>
-                      setModal((m) => ({
-                        ...m,
-                        type: t.id,
-                      }))
-                    }
-                    style={{ padding: "2px 12px" }}
-                    className={`flex-1 text-sm rounded-xl border font-medium transition-all duration-200 ${
-                      modal.type === t.id
-                        ? "bg-accent/15 text-accent border-accent/30"
-                        : "text-text-3 border-border hover:border-border-2 hover:text-text-2"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
               <input
                 autoFocus
                 className="w-full bg-bg border border-border-2 rounded-xl px-3.5 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
@@ -221,26 +234,24 @@ export default function Navigation() {
                 }
                 onKeyDown={(e) => e.key === "Enter" && addPage()}
               />
-              {modal.type === "custom" && (
-                <input
-                  className="w-full bg-bg border border-border-2 rounded-xl px-3.5 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
-                  placeholder="https://example.com"
-                  value={modal.url}
-                  onChange={(e) =>
-                    setModal((m) => ({
-                      ...m,
-                      url: e.target.value,
-                    }))
-                  }
-                  onKeyDown={(e) => e.key === "Enter" && addPage()}
-                />
-              )}
+              <input
+                className="w-full bg-bg border border-border-2 rounded-xl px-3.5 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
+                placeholder="https://example.com"
+                value={modal.url}
+                onChange={(e) =>
+                  setModal((m) => ({
+                    ...m,
+                    url: e.target.value,
+                  }))
+                }
+                onKeyDown={(e) => e.key === "Enter" && addPage()}
+              />
               <button
                 onClick={addPage}
-                disabled={!modal.label.trim()}
+                disabled={!modal.label.trim() || !normalizeCustomPageUrl(modal.url)}
                 className="w-full py-2.5 bg-accent text-white text-sm font-semibold rounded-xl hover:bg-accent-hover transition-colors disabled:opacity-40"
               >
-                Add page
+                {modal.pageId ? "Save page" : "Add and open page"}
               </button>
             </div>
           </div>

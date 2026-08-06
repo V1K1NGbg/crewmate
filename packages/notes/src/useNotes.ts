@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useApp } from "@crewmate/state";
+import { useApp, type AppConfigurationBackup } from "@crewmate/state";
 import type { Note } from "@crewmate/types";
 import { DEFAULT_NOTES_SETTINGS, type NotesPluginSettings } from "./settings";
+import { buildNotesDocument, parseNotesDocument } from "./documentContent";
 
 export function docToAppNotes(
   docId: string | null,
@@ -25,7 +26,7 @@ export function docToAppNotes(
 }
 
 export function useNotes() {
-  const { state, notify } = useApp();
+  const { state, dispatch, notify } = useApp();
   const [docId, setDocId] = useState<string | null>(null);
   const [docTitle, setDocTitle] = useState("");
   const [content, setContent] = useState("");
@@ -36,6 +37,8 @@ export function useNotes() {
   const docIdRef = useRef<string | null>(null);
   const contentRef = useRef(content);
   const dirtyRef = useRef(false);
+  const changeVersionRef = useRef(0);
+  const configurationRef = useRef<AppConfigurationBackup>({});
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -60,8 +63,16 @@ export function useNotes() {
       const contentData = await contentRes.json();
       if (!contentRes.ok)
         throw new Error(contentData.error ?? "Failed to load document content");
-      setContent(contentData.content ?? "");
+      const parsedDocument = parseNotesDocument(contentData.content ?? "");
+      contentRef.current = parsedDocument.body;
+      setContent(parsedDocument.body);
       setDirty(false);
+      if (parsedDocument.backup) {
+        dispatch({
+          type: "RESTORE_APP_CONFIGURATION",
+          backup: parsedDocument.backup,
+        });
+      }
     } catch (err: unknown) {
       setInitError(
         err instanceof Error ? err.message : "Failed to load Google Doc",
@@ -69,7 +80,7 @@ export function useNotes() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dispatch]);
 
   const refreshDoc = useCallback(async () => {
     const id = docIdRef.current;
@@ -78,7 +89,9 @@ export function useNotes() {
       const res = await fetch(`/api/docs/content?id=${encodeURIComponent(id)}`);
       if (!res.ok) return;
       const data = await res.json();
-      setContent(data.content ?? "");
+      const parsedDocument = parseNotesDocument(data.content ?? "");
+      contentRef.current = parsedDocument.body;
+      setContent(parsedDocument.body);
     } catch {
       /* silent */
     }
@@ -87,6 +100,11 @@ export function useNotes() {
   const saveDoc = useCallback(async () => {
     const id = docIdRef.current;
     if (!id) return;
+    const versionAtStart = changeVersionRef.current;
+    const documentContent = buildNotesDocument(
+      contentRef.current,
+      configurationRef.current,
+    );
     setSaving(true);
     try {
       const res = await fetch("/api/docs/content", {
@@ -94,11 +112,11 @@ export function useNotes() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id,
-          content: contentRef.current,
+          content: documentContent,
         }),
       });
       if (!res.ok) throw new Error("Failed to save");
-      setDirty(false);
+      if (changeVersionRef.current === versionAtStart) setDirty(false);
     } catch (err: unknown) {
       notify(err instanceof Error ? err.message : "Save failed", "error");
     } finally {
@@ -110,6 +128,24 @@ export function useNotes() {
     (state.pageSettings.features.notes as NotesPluginSettings | undefined) ??
     DEFAULT_NOTES_SETTINGS;
 
+  useEffect(() => {
+    configurationRef.current = {
+      pages: state.pages,
+      pageSettings: state.pageSettings,
+      panelWidths: state.panelWidths,
+      aiServerUrl: state.aiServerUrl,
+      assistantModel: state.assistantModel,
+      environmentVault: state.environmentVault,
+    };
+  }, [
+    state.aiServerUrl,
+    state.assistantModel,
+    state.environmentVault,
+    state.pageSettings,
+    state.pages,
+    state.panelWidths,
+  ]);
+
   const scheduleAutoSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     const delay = notesSettings.autoSaveDelay ?? 2000;
@@ -118,20 +154,45 @@ export function useNotes() {
 
   const appendContent = useCallback(
     (addition: string) => {
-      setContent((prev) => prev + addition);
+      changeVersionRef.current += 1;
+      setContent((prev) => {
+        const next = prev + addition;
+        contentRef.current = next;
+        return next;
+      });
       setDirty(true);
+      scheduleAutoSave();
     },
-    [],
+    [scheduleAutoSave],
   );
 
   const updateContent = useCallback(
     (value: string) => {
+      changeVersionRef.current += 1;
+      contentRef.current = value;
       setContent(value);
       setDirty(true);
       scheduleAutoSave();
     },
     [scheduleAutoSave],
   );
+
+  useEffect(() => {
+    if (loading || !docId) return;
+    changeVersionRef.current += 1;
+    setDirty(true);
+    scheduleAutoSave();
+  }, [
+    docId,
+    loading,
+    scheduleAutoSave,
+    state.aiServerUrl,
+    state.assistantModel,
+    state.environmentVault,
+    state.pageSettings,
+    state.pages,
+    state.panelWidths,
+  ]);
 
   return {
     docId,
@@ -144,10 +205,7 @@ export function useNotes() {
     initDoc,
     refreshDoc,
     saveDoc,
-    scheduleAutoSave,
     appendContent,
     updateContent,
-    setContent,
-    setDirty,
   };
 }

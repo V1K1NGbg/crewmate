@@ -24,58 +24,90 @@ export function useResizable({
 }: UseResizableOptions) {
     const [width, setWidth] = useState(initial);
     const dragging = useRef(false);
+    const activePointer = useRef<number | null>(null);
     const startX = useRef(0);
     const startW = useRef(0);
+    const widthRef = useRef(initial);
+    const previousCursor = useRef("");
+    const previousUserSelect = useRef("");
+    const onResizeRef = useRef(onResize);
+
+    useEffect(() => {
+        onResizeRef.current = onResize;
+    }, [onResize]);
 
     // Sync if initial changes externally (e.g. from persisted state)
     useEffect(() => {
         // The persisted panel width is an external value mirrored by the drag state.
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setWidth(initial);
+        widthRef.current = initial;
     }, [initial]);
 
-    const onMouseDown = useCallback(
-        (e: React.MouseEvent) => {
+    const finishDrag = useCallback(() => {
+        if (!dragging.current) return;
+        dragging.current = false;
+        activePointer.current = null;
+        document.body.style.cursor = previousCursor.current;
+        document.body.style.userSelect = previousUserSelect.current;
+        onResizeRef.current?.(widthRef.current);
+    }, []);
+
+    const onPointerDown = useCallback(
+        (e: React.PointerEvent<HTMLElement>) => {
+            if (e.button !== 0 || dragging.current) return;
             e.preventDefault();
             dragging.current = true;
+            activePointer.current = e.pointerId;
             startX.current = e.clientX;
-            startW.current = width;
+            startW.current = widthRef.current;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            previousCursor.current = document.body.style.cursor;
+            previousUserSelect.current = document.body.style.userSelect;
             document.body.style.cursor = "col-resize";
             document.body.style.userSelect = "none";
         },
-        [width],
+        [],
     );
 
-    useEffect(() => {
-        function onMouseMove(e: MouseEvent) {
-            if (!dragging.current) return;
+    const onPointerMove = useCallback(
+        (e: React.PointerEvent<HTMLElement>) => {
+            if (!dragging.current || e.pointerId !== activePointer.current) return;
             const dx = e.clientX - startX.current;
             const newW =
                 side === "right"
                     ? startW.current + dx
                     : startW.current - dx;
-            setWidth(Math.max(min, Math.min(max, newW)));
-        }
+            const clampedWidth = Math.max(min, Math.min(max, newW));
+            widthRef.current = clampedWidth;
+            setWidth(clampedWidth);
+        },
+        [side, min, max],
+    );
 
-        function onMouseUp() {
-            if (!dragging.current) return;
-            dragging.current = false;
-            document.body.style.cursor = "";
-            document.body.style.userSelect = "";
-            // Read the latest width from the state
-            setWidth((w) => {
-                onResize?.(w);
-                return w;
-            });
-        }
+    const onPointerUp = useCallback(
+        (e: React.PointerEvent<HTMLElement>) => {
+            if (e.pointerId !== activePointer.current) return;
+            finishDrag();
+        },
+        [finishDrag],
+    );
 
-        window.addEventListener("mousemove", onMouseMove);
-        window.addEventListener("mouseup", onMouseUp);
+    useEffect(() => {
+        const onWindowBlur = () => finishDrag();
+        window.addEventListener("blur", onWindowBlur);
         return () => {
-            window.removeEventListener("mousemove", onMouseMove);
-            window.removeEventListener("mouseup", onMouseUp);
+            window.removeEventListener("blur", onWindowBlur);
+            finishDrag();
         };
-    }, [side, min, max, onResize]);
+    }, [finishDrag]);
 
-    return { width, onMouseDown };
+    return {
+        width,
+        onPointerDown,
+        onPointerMove,
+        onPointerUp,
+        onPointerCancel: onPointerUp,
+        onLostPointerCapture: finishDrag,
+    };
 }

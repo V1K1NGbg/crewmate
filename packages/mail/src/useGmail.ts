@@ -66,14 +66,14 @@ export function useGmail() {
   );
 
   const fetchThread = useCallback(
-    async (id: string): Promise<GmailMessage[] | null> => {
+    async (id: string, silent = false): Promise<GmailMessage[] | null> => {
       try {
         const res = await fetch(`/api/gmail/thread/${id}`);
         if (!res.ok) throw new Error("Failed to fetch thread");
         const data = await res.json();
         return data.messages;
       } catch {
-        notify("Failed to load thread", "error");
+        if (!silent) notify("Failed to load thread", "error");
         return null;
       }
     },
@@ -92,6 +92,26 @@ export function useGmail() {
         return true;
       } catch {
         notify("Failed to archive", "error");
+        return false;
+      }
+    },
+    [notify],
+  );
+
+  const unarchiveThread = useCallback(
+    async (id: string) => {
+      try {
+        const res = await fetch(`/api/gmail/thread/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ archive: false }),
+        });
+        if (!res.ok) throw new Error("Unarchive failed");
+        setThreads((prev) => prev.filter((thread) => thread.id !== id));
+        notify("Thread returned to Inbox", "success");
+        return true;
+      } catch {
+        notify("Failed to unarchive", "error");
         return false;
       }
     },
@@ -173,6 +193,7 @@ export function useGmail() {
     fetchThreads,
     fetchThread,
     archiveThread,
+    unarchiveThread,
     trashThread,
     toggleStar,
     sendEmail,

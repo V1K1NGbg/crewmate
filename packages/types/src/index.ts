@@ -105,6 +105,22 @@ export interface Note {
 export interface NotePrefill {
   title: string;
   content: string;
+  /** Optional stable section used when appending content to the shared notes document. */
+  category?: string;
+  source?: string;
+  reviewOrigin?: MailReviewOrigin;
+}
+
+export interface MailReviewOrigin {
+  threadId: string;
+}
+
+export interface MailPrefill {
+  to?: string;
+  subject?: string;
+  body?: string;
+  query?: string;
+  reviewCompletedThreadId?: string;
 }
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
@@ -136,6 +152,7 @@ export interface TaskPrefill {
   description?: string;
   dueDate?: string;
   emailContext?: string;
+  reviewOrigin?: MailReviewOrigin;
 }
 
 // ─── UI ───────────────────────────────────────────────────────────────────────
@@ -149,12 +166,14 @@ export interface AppNotification {
 
 export interface CalendarPrefill {
   title: string;
+  eventId?: string;
   description?: string;
   dateHint?: string;
   startHint?: string;
   endHint?: string;
   endDateHint?: string; // for multi-day all-day events
   emailContext?: string;
+  reviewOrigin?: MailReviewOrigin;
 }
 
 // ─── Color Schemes ────────────────────────────────────────────────────────────
@@ -453,9 +472,26 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
+export type ComponentSpacing =
+  | "minimal"
+  | "dense"
+  | "compact"
+  | "comfortable"
+  | "spacious";
+
 export interface GeneralSettings {
   autoRefreshInterval: number; // seconds, 0 = disabled
   colorScheme: string; // color scheme id
+  componentSpacing: ComponentSpacing;
+}
+
+export interface EncryptedEnvironmentFile {
+  version: 1;
+  algorithm: "AES-GCM";
+  salt: string;
+  iv: string;
+  ciphertext: string;
+  updatedAt: string;
 }
 
 /**

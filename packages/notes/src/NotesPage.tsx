@@ -1,6 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useState,
+  useEffect,
+  useRef,
+  type InputHTMLAttributes,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import {
   Save,
   Loader2,
@@ -20,6 +30,8 @@ import { aiChat } from "@crewmate/lib";
 import type { NotePrefill } from "@crewmate/types";
 import { useNotes, docToAppNotes } from "./useNotes";
 import { DEFAULT_NOTES_SETTINGS, type NotesPluginSettings } from "./settings";
+import { appendCategorizedNote } from "./categorizedNotes";
+import { setMarkdownTaskChecked } from "./markdownTasks";
 
 const NOTE_TEMPLATE_PROMPT = (content: string) =>
   `You are a markdown structure formatter. Your ONLY job is to fix the structure and formatting of the note below — do NOT change, reword, paraphrase, summarize, or remove any words or information.
@@ -33,6 +45,37 @@ Rules:
 
 Content:
 ${content}`;
+
+function makeTaskCheckboxInteractive(
+  children: ReactNode,
+  onCheckedChange: (checked: boolean) => void,
+): ReactNode {
+  return Children.map(children, (child) => {
+    if (!isValidElement<{ children?: ReactNode }>(child)) return child;
+
+    if (child.type === "input") {
+      const input = child as ReactElement<
+        InputHTMLAttributes<HTMLInputElement>,
+        "input"
+      >;
+      if (input.props.type !== "checkbox") return child;
+
+      return cloneElement(input, {
+        disabled: false,
+        onClick: (event) => event.stopPropagation(),
+        onChange: (event) => onCheckedChange(event.target.checked),
+        title: input.props.checked ? "Mark incomplete" : "Mark complete",
+      });
+    }
+
+    if (child.props.children === undefined) return child;
+    return cloneElement(
+      child,
+      undefined,
+      makeTaskCheckboxInteractive(child.props.children, onCheckedChange),
+    );
+  });
+}
 
 export default function NotesPage() {
   const { state, dispatch, notify } = useApp();
@@ -49,11 +92,8 @@ export default function NotesPage() {
     initDoc,
     refreshDoc,
     saveDoc,
-    scheduleAutoSave,
     appendContent,
     updateContent,
-    setContent,
-    setDirty,
   } = notes;
 
   const [summarizing, setSummarizing] = useState(false);
@@ -82,7 +122,6 @@ export default function NotesPage() {
 
   useEffect(() => {
     // Authentication is external state; initialize the remote document once available.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (session?.accessToken) initDoc();
   }, [session?.accessToken, initDoc]);
 
@@ -98,13 +137,27 @@ export default function NotesPage() {
 
   useEffect(() => {
     if (!notePrefill || !docId) return;
-    const { title, content: prefillContent } = notePrefill;
+    const { title, content: prefillContent, category, reviewOrigin } = notePrefill;
     dispatch({ type: "CLEAR_PAGE_PREFILL", pageId: "notes" });
     const timestamp = new Date().toLocaleString();
-    const addition = `\n\n## ${title}\n\n> Added on ${timestamp}\n\n${prefillContent || ""}\n`;
-    appendContent(addition);
+    if (category) {
+      updateContent(
+        appendCategorizedNote(content, category, title, prefillContent || "", timestamp),
+      );
+    } else {
+      const addition = `\n\n## ${title}\n\n> Added on ${timestamp}\n\n${prefillContent || ""}\n`;
+      appendContent(addition);
+    }
     notify("Content appended from prefill", "success");
-  }, [notePrefill, docId, dispatch, appendContent, notify]);
+    if (reviewOrigin) {
+      dispatch({
+        type: "SET_PAGE_PREFILL",
+        pageId: "mail",
+        prefill: { reviewCompletedThreadId: reviewOrigin.threadId },
+      });
+      dispatch({ type: "SET_ACTIVE_PAGE", id: "mail" });
+    }
+  }, [notePrefill, docId, dispatch, appendContent, updateContent, content, notify]);
 
   useEffect(() => {
     const interval = state.pageSettings.general.autoRefreshInterval;
@@ -130,7 +183,6 @@ export default function NotesPage() {
       appendContent(
         `\n\n---\n\n### Summary\n\n> Generated on ${timestamp}\n\n${summary}\n`,
       );
-      scheduleAutoSave();
       notify("Summary appended", "success");
     } catch (err: unknown) {
       notify(err instanceof Error ? err.message : "Summarize failed", "error");
@@ -153,9 +205,7 @@ export default function NotesPage() {
         state.assistantModel || undefined,
       );
       lastContentRef.current = content;
-      setContent(result);
-      setDirty(true);
-      scheduleAutoSave();
+      updateContent(result);
       setCanUndoFormat(true);
       if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
       undoTimerRef.current = setTimeout(() => setCanUndoFormat(false), 8000);
@@ -172,14 +222,42 @@ export default function NotesPage() {
 
   function handleUndoFormat() {
     if (lastContentRef.current === null) return;
-    setContent(lastContentRef.current);
+    updateContent(lastContentRef.current);
     lastContentRef.current = null;
     setCanUndoFormat(false);
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-    setDirty(true);
-    scheduleAutoSave();
     notify("Format undone", "info");
   }
+
+  const markdownComponents = {
+    li: ({ node, children, ...props }: React.ComponentPropsWithoutRef<"li"> & {
+      node?: { position?: { start: { line: number } } };
+    }) => {
+      const lineNumber = node?.position?.start.line;
+      const interactiveChildren = makeTaskCheckboxInteractive(
+        children,
+        (checked) => {
+          if (!lineNumber) return;
+          updateContent(setMarkdownTaskChecked(content, lineNumber, checked));
+        },
+      );
+
+      return <li {...props}>{interactiveChildren}</li>;
+    },
+    a: ({ node, ...props }: React.ComponentPropsWithoutRef<"a"> & {
+      node?: unknown;
+    }) => {
+      void node;
+      return (
+        <a
+          {...props}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => event.stopPropagation()}
+        />
+      );
+    },
+  };
 
   if (!session?.accessToken || initError) {
     const isUnauthorized =
@@ -362,13 +440,20 @@ export default function NotesPage() {
             setTimeout(() => editorRef.current?.focus(), 0);
           }}
         >
-          {content ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-          ) : (
-            <p className="text-text-3 italic">
-              Click to start writing… your notes are saved to Google Docs.
-            </p>
-          )}
+          <div className="notes-markdown-content">
+            {content ? (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={markdownComponents}
+              >
+                {content}
+              </ReactMarkdown>
+            ) : (
+              <p className="text-text-3 italic">
+                Click to start writing… your notes are saved to Google Docs.
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>

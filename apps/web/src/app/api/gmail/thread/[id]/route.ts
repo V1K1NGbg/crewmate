@@ -60,7 +60,7 @@ export async function GET(
 }
 
 export async function PATCH(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
@@ -69,12 +69,16 @@ export async function PATCH(
 
   const { id } = await params;
   const gmail = getGmailClient(session.accessToken);
+  const body = await req.json().catch(() => ({}));
+  const archive = body.archive !== false;
 
   try {
     await gmail.users.threads.modify({
       userId: "me",
       id,
-      requestBody: { removeLabelIds: ["INBOX"] },
+      requestBody: archive
+        ? { removeLabelIds: ["INBOX"] }
+        : { addLabelIds: ["INBOX"] },
     });
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {

@@ -18,11 +18,23 @@ import type {
   AssistantMessage,
   AssistantSession,
   FeaturePackageInfo,
+  EncryptedEnvironmentFile,
 } from "@crewmate/types";
 import {
   initializeAssistantSessions,
   removeAssistantSession,
+  appendAssistantMessage,
 } from "./assistantSessions";
+import {
+  mergeAppConfiguration,
+  normalizeComponentSpacing,
+  type AppConfigurationBackup,
+} from "./configurationBackup";
+import { appendCustomPage, updateCustomPage, type CustomPageInput } from "./pages";
+
+export type { AppConfigurationBackup } from "./configurationBackup";
+export { buildAssistantSessionMemory } from "./assistantSessions";
+export { normalizeCustomPageUrl, toEmbeddableCustomPageUrl } from "./pages";
 
 /* ------------------------------------------------------------------ */
 /* State & actions                                                     */
@@ -52,12 +64,16 @@ export interface AppState {
    * up on mount (e.g. "create a calendar event from this email"), keyed by
    * the target page id. */
   pagePrefills: Record<string, unknown>;
+  environmentVault: EncryptedEnvironmentFile | null;
+  /** High-entropy local secret. Deliberately excluded from the Notes backup. */
+  environmentPassword: string;
 }
 
 export type Action =
   | { type: "SET_ACTIVE_PAGE"; id: string }
-  | { type: "ADD_PAGE"; page: Omit<Page, "keybinding"> }
+  | { type: "ADD_PAGE"; page: CustomPageInput }
   | { type: "REMOVE_PAGE"; id: string }
+  | { type: "UPDATE_PAGE"; id: string; updates: Pick<Page, "label" | "url"> }
   | { type: "SET_AI_OVERLAY_OPEN"; open: boolean }
   | { type: "SET_AI_SERVER_URL"; url: string }
   | { type: "SET_ASSISTANT_MODEL"; model: string }
@@ -80,7 +96,10 @@ export type Action =
   | { type: "DELETE_ASSISTANT_SESSION"; sessionId: string }
   | { type: "SET_PANEL_WIDTH"; key: string; width: number }
   | { type: "SET_INSTALLED_FEATURES"; features: FeaturePackageInfo[] }
-  | { type: "SET_FEATURE_ENABLED"; page: Page; enabled: boolean };
+  | { type: "SET_FEATURE_ENABLED"; page: Page; enabled: boolean }
+  | { type: "RESTORE_APP_CONFIGURATION"; backup: AppConfigurationBackup }
+  | { type: "SET_ENVIRONMENT_VAULT"; vault: EncryptedEnvironmentFile | null }
+  | { type: "SET_ENVIRONMENT_PASSWORD"; password: string };
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -103,11 +122,15 @@ function migratePageSettings(
   saved: Partial<PageSettings> | undefined,
   initialFeatureSettings: Record<string, unknown>,
 ): PageSettings {
+  const savedGeneral = saved?.general;
   return {
     general: {
       autoRefreshInterval: 0,
       colorScheme: "default",
-      ...(saved?.general ?? {}),
+      ...savedGeneral,
+      componentSpacing: normalizeComponentSpacing(
+        savedGeneral?.componentSpacing,
+      ),
     },
     features: {
       ...initialFeatureSettings,
@@ -126,11 +149,14 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, activePage: action.id };
 
     case "ADD_PAGE": {
-      const newPage: Page = {
-        ...action.page,
-        keybinding: String(state.pages.length + 1),
-      };
-      return { ...state, pages: [...state.pages, newPage] };
+      const pages = appendCustomPage(state.pages, action.page);
+      return pages === state.pages
+        ? state
+        : { ...state, pages, activePage: action.page.id };
+    }
+    case "UPDATE_PAGE": {
+      const pages = updateCustomPage(state.pages, action.id, action.updates);
+      return pages === state.pages ? state : { ...state, pages };
     }
     case "REMOVE_PAGE": {
       const pages = assignKeybindings(
@@ -211,13 +237,11 @@ function reducer(state: AppState, action: Action): AppState {
       };
 
     case "ADD_ASSISTANT_MESSAGE": {
-      if (!state.activeSessionId) return state;
       return {
         ...state,
-        assistantSessions: state.assistantSessions.map((s) =>
-          s.id === state.activeSessionId
-            ? { ...s, messages: [...s.messages, action.message] }
-            : s,
+        assistantSessions: appendAssistantMessage(
+          state.assistantSessions,
+          action.message,
         ),
       };
     }
@@ -281,6 +305,18 @@ function reducer(state: AppState, action: Action): AppState {
 
       return { ...state, pages, activePage };
     }
+
+    case "RESTORE_APP_CONFIGURATION":
+      return {
+        ...state,
+        ...mergeAppConfiguration(state, action.backup),
+      };
+
+    case "SET_ENVIRONMENT_VAULT":
+      return { ...state, environmentVault: action.vault };
+
+    case "SET_ENVIRONMENT_PASSWORD":
+      return { ...state, environmentPassword: action.password };
 
     default:
       return state;
@@ -358,9 +394,28 @@ export function AppProvider({
     installedFeatures: initialInstalledFeatures ?? [],
     featureData: {},
     pagePrefills: {},
+    environmentVault: saved.environmentVault ?? null,
+    environmentPassword:
+      typeof saved.environmentPassword === "string"
+        ? saved.environmentPassword
+        : "",
   });
 
   const notifTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (state.environmentPassword) return;
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    dispatch({
+      type: "SET_ENVIRONMENT_PASSWORD",
+      password: btoa(binary)
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, ""),
+    });
+  }, [state.environmentPassword]);
 
   const notify = useCallback(
     (message: string, type: AppNotification["type"] = "info") => {
@@ -385,6 +440,8 @@ export function AppProvider({
         panelWidths: state.panelWidths,
         assistantSessions: state.assistantSessions,
         activeSessionId: state.activeSessionId,
+        environmentVault: state.environmentVault,
+        environmentPassword: state.environmentPassword,
       }),
     );
   }, [
@@ -396,6 +453,8 @@ export function AppProvider({
     state.panelWidths,
     state.assistantSessions,
     state.activeSessionId,
+    state.environmentVault,
+    state.environmentPassword,
   ]);
 
   // Auto-dismiss notifications after 3.5s

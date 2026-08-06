@@ -1,5 +1,5 @@
 import { lazy } from "react";
-import { CheckSquare } from "lucide-react";
+import { CheckSquare, ExternalLink } from "lucide-react";
 import type { FeaturePlugin, Task } from "@crewmate/types";
 import { DEFAULT_TASKS_SETTINGS, type TasksPluginSettings } from "./settings";
 
@@ -9,7 +9,7 @@ function buildAssistantContext(data: unknown): string | null {
   const pending = tasks.filter((t) => t.status !== "done").length;
   const lines: string[] = [`\n--- Tasks (${tasks.length}, ${pending} pending) ---`];
   for (const t of tasks.slice(0, 15)) {
-    let entry = `• [${t.status}] ${t.title} (${t.priority})`;
+    let entry = `• [id:${t.id}] [${t.status}] ${t.title} (${t.priority})`;
     if (t.dueDate) entry += ` due:${t.dueDate}`;
     if (t.description) entry += ` — ${t.description}`;
     lines.push(entry);
@@ -45,6 +45,13 @@ export const tasksPlugin: FeaturePlugin<TasksPluginSettings> = {
         description: payload?.description,
         dueDate: payload?.dateHint,
       }),
+    },
+    {
+      type: "open_task",
+      icon: ExternalLink,
+      promptHint:
+        '{"type":"open_task","label":"Open task","payload":{"taskId":"..."}}',
+      buildPrefill: (payload) => ({ taskId: payload?.taskId }),
     },
   ],
 };

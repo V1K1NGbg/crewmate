@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useApp } from "@crewmate/state";
+import { buildAssistantSessionMemory, useApp } from "@crewmate/state";
 import { aiChat, detectAIServer } from "@crewmate/lib";
 import type { AssistantMessage, AssistantSession, AssistantAction } from "@crewmate/types";
 import { PLUGINS, getPlugin } from "@/plugins/registry";
@@ -190,13 +190,15 @@ export default function AIAssistant() {
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || loading || !state.activeSessionId) return;
+    const sessionId = state.activeSessionId;
+    const requestSession = state.assistantSessions.find((session) => session.id === sessionId);
 
     const userMsg: AssistantMessage = {
       id: crypto.randomUUID(),
       role: "user",
       content: text,
       timestamp: new Date().toISOString(),
-      sessionId: state.activeSessionId,
+      sessionId,
     };
     dispatch({ type: "ADD_ASSISTANT_MESSAGE", message: userMsg });
     setInput("");
@@ -204,7 +206,10 @@ export default function AIAssistant() {
 
     try {
       const context = buildPageContext(state);
-      const fullPrompt = `[App Context]\n${context}\n\n[User Message]\n${text}${buildActionsSystemSuffix(state)}`;
+      const memory = buildAssistantSessionMemory(requestSession);
+      const fullPrompt = `[App Context]\n${context}${
+        memory ? `\n\n[Conversation Memory]\n${memory}` : ""
+      }\n\n[User Message]\n${text}${buildActionsSystemSuffix(state)}`;
       const rawResponse = await aiChat(
         state.aiServerUrl,
         fullPrompt,
@@ -217,7 +222,7 @@ export default function AIAssistant() {
         content,
         actions: actions.length > 0 ? actions : undefined,
         timestamp: new Date().toISOString(),
-        sessionId: state.activeSessionId,
+        sessionId,
       };
       dispatch({ type: "ADD_ASSISTANT_MESSAGE", message: assistantMsg });
     } catch {
@@ -228,7 +233,7 @@ export default function AIAssistant() {
         content:
           "Sorry, I couldn't process that request. Make sure your AI server is running and has a model loaded.",
         timestamp: new Date().toISOString(),
-        sessionId: state.activeSessionId,
+        sessionId,
       };
       dispatch({ type: "ADD_ASSISTANT_MESSAGE", message: errorMsg });
     } finally {

@@ -6,14 +6,16 @@ An AI-powered dashboard that integrates your Email, Calendar, Notes, and Tasks i
 
 ## Features
 
-- **Mail** — Browse Email threads, read messages, reply, archive, and trash emails
+- **Mail** — Browse Inbox/Archived mail, keep a sliding window of AI actions ready, and optionally review with configurable single-key shortcuts
 - **Calendar** — View and create Calendar events with natural language
 - **Notes** — Personal notes synced to a Google Doc with **inline Markdown preview** — click to edit, press `Esc` to return to preview
 - **Tasks** — Create, organize, and track Google Tasks with collapsible subtasks, AI-powered task breakdown, due dates, and status toggling
 - **AI Assistant** — Centered overlay popup (90% viewport) with blur backdrop and context awareness of emails, events, notes, and tasks
 - **Settings** — Centered modal with sidebar navigation and per-section configuration (General, AI Assistant, Gmail, Calendar, Notes, Tasks)
-- **Custom Pages** — Add any URL as a tab in the sidebar, embedded as an iframe
+- **Custom Pages** — Add/edit URL tabs and keep them inside Crewmate, including iframe-compatible Google URL modes
+- **Encrypted environment vault** — Edit sensitive key/value text in Settings; a generated local password plus PIN encrypts the Notes-backed ciphertext
 - **Keyboard Shortcuts** — `1`–`9` to switch pages, `O` to toggle AI panel, `Esc` to close overlays
+- **Mail review shortcuts** — Optional and configurable; defaults are `J`/`K` to choose, `E` to apply and archive, `X` to skip, and `A` to apply only
 - **Auto-refresh** — Configurable periodic refresh for all pages to detect external changes
 - **Cross-page actions** — Send notes to Calendar events, prefill tasks from other pages, AI summarization appended with structured Markdown
 
@@ -43,7 +45,7 @@ An AI-powered dashboard that integrates your Email, Calendar, Notes, and Tasks i
 
 ## Environment Variables
 
-Create a `.env.local` file in the project root:
+Copy `apps/web/.env.example` to `apps/web/.env.local` (the Next.js app root):
 
 ```env
 GOOGLE_CLIENT_ID=your-google-client-id
@@ -65,15 +67,21 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000), sign in with Google, and you're ready.
 
-The `.env`/`.env.local` file lives in `apps/web/` (that's the Next.js app root).
-
 ### Other scripts
 
 ```bash
-npm run build   # Production build
-npm start       # Start production server
-npm run lint    # Run ESLint
+npm run lint       # Lint the web app and every workspace package
+npm run typecheck  # Run strict TypeScript checking
+npm test           # Run all colocated package tests
+npm run check      # Run lint, typecheck, and tests
+npm run check:all  # Run check plus a production build
+npm run build      # Production build
+npm start          # Start production server
 ```
+
+See [`AGENTS.md`](AGENTS.md) for repository editing conventions and
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for package boundaries and data
+flows.
 
 ---
 
@@ -155,6 +163,8 @@ The assistant opens as a centered overlay popup (90% of the viewport) with a
 blurred backdrop — click outside or press `Esc` to dismiss. It is loaded with
 context from all active pages (recent emails, upcoming events, notes content,
 task list) so it can answer questions and take actions on your behalf.
+Conversation history is sent only from the active chat session, and replies
+remain attached to the session that initiated them if the user switches chats.
 
 ---
 
@@ -163,6 +173,9 @@ task list) so it can answer questions and take actions on your behalf.
 The Notes page connects to a Google Doc with a unified editor/preview pane. Content is displayed as rendered Markdown by default — click the preview or the Edit button to switch to the text editor. Press `Esc` to return to the preview.
 
 Content appended via AI summarization or cross-page prefills uses structured Markdown (headings, blockquotes with timestamps, horizontal rules).
+Content sent from Mail is grouped under a dedicated `Mail notes` section.
+When Quick review is enabled, cross-page actions return to Mail and advance only
+after the destination action succeeds.
 
 ---
 

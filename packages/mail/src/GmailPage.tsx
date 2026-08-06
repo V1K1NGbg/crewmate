@@ -13,6 +13,7 @@ import {
   Pencil,
   Sparkles,
   Archive,
+  ArchiveRestore,
   CalendarPlus,
   CheckSquare,
   FileText,
@@ -22,12 +23,24 @@ import {
   ChevronDown,
   ChevronUp,
   Star,
+  MailOpen,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useSession, signIn } from "next-auth/react";
 import { useApp } from "@crewmate/state";
-import { aiChat, useResizable } from "@crewmate/lib";
+import { aiChat, parseJsonArray, useResizable } from "@crewmate/lib";
 import { useGmail, type GmailMessage } from "./useGmail";
+import type { MailPrefill } from "@crewmate/types";
+import { DEFAULT_GMAIL_SETTINGS, type GmailPluginSettings } from "./settings";
+import {
+  countReadySuggestions,
+  selectSuggestionPrecomputeCandidates,
+  suggestionWindowCount,
+} from "./suggestionQueue";
+import {
+  quickReviewCommandForKey,
+  waitsForReviewDestination,
+} from "./quickReview";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -35,6 +48,7 @@ import { useGmail, type GmailMessage } from "./useGmail";
 
 type AIActionType =
   | "archive"
+  | "unarchive"
   | "create_event"
   | "create_task"
   | "add_to_notes"
@@ -117,9 +131,15 @@ const ACTION_STYLES: Record<
 > = {
   archive: {
     icon: <Archive size={14} />,
-    color: "var(--color-text-3)",
-    bg: "color-mix(in srgb, var(--color-surface-2) 60%, transparent)",
-    border: "var(--color-border-2)",
+    color: "var(--color-mail)",
+    bg: "color-mix(in srgb, var(--color-mail) 8%, transparent)",
+    border: "color-mix(in srgb, var(--color-mail) 30%, transparent)",
+  },
+  unarchive: {
+    icon: <ArchiveRestore size={14} />,
+    color: "var(--color-mail)",
+    bg: "color-mix(in srgb, var(--color-mail) 8%, transparent)",
+    border: "color-mix(in srgb, var(--color-mail) 30%, transparent)",
   },
   create_event: {
     icon: <CalendarPlus size={14} />,
@@ -141,17 +161,101 @@ const ACTION_STYLES: Record<
   },
   reply_draft: {
     icon: <Wand2 size={14} />,
-    color: "var(--color-accent)",
-    bg: "color-mix(in srgb, var(--color-accent) 8%, transparent)",
-    border: "color-mix(in srgb, var(--color-accent) 30%, transparent)",
+    color: "var(--color-mail)",
+    bg: "color-mix(in srgb, var(--color-mail) 8%, transparent)",
+    border: "color-mix(in srgb, var(--color-mail) 30%, transparent)",
   },
   star_email: {
     icon: <Star size={14} />,
-    color: "var(--color-warning)",
-    bg: "color-mix(in srgb, var(--color-warning) 8%, transparent)",
-    border: "color-mix(in srgb, var(--color-warning) 30%, transparent)",
+    color: "var(--color-mail)",
+    bg: "color-mix(in srgb, var(--color-mail) 8%, transparent)",
+    border: "color-mix(in srgb, var(--color-mail) 30%, transparent)",
   },
 };
+
+const ACTION_ORDER: Record<AIActionType, number> = {
+  create_event: 0,
+  create_task: 1,
+  reply_draft: 2,
+  add_to_notes: 3,
+  star_email: 4,
+  archive: 5,
+  unarchive: 5,
+};
+
+const ARCHIVE_ACTION: AIAction = {
+  type: "archive",
+  label: "Archive email",
+  description: "Moves this conversation out of the inbox.",
+};
+
+const UNARCHIVE_ACTION: AIAction = {
+  type: "unarchive",
+  label: "Unarchive email",
+  description: "Returns this conversation to the Inbox.",
+};
+
+// llama.cpp commonly runs with a single inference slot. Keeping mail's
+// background queue serial prevents precomputation from starving the email the
+// user is actively reviewing.
+const PRECOMPUTE_CONCURRENCY = 1;
+const MAIL_AI_TIMEOUT_MS = 45_000;
+const ARCHIVED_QUERY =
+  "in:anywhere -in:inbox -in:sent -in:drafts -in:spam -in:trash";
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("AI analysis timed out. Showing basic actions.")),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function orderSuggestedActions(actions: AIAction[]): AIAction[] {
+  const seen = new Set<string>();
+  const distinct = actions.filter((action) => {
+    if (action.type === "archive" || action.type === "unarchive") return false;
+    const key = JSON.stringify([
+      action.type,
+      action.label.trim().toLowerCase(),
+      action.payload ?? null,
+    ]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return distinct
+    .sort((a, b) => ACTION_ORDER[a.type] - ACTION_ORDER[b.type])
+    .slice(0, 10);
+}
+
+function mailboxActionForMailbox(isArchivedMailbox: boolean): AIAction {
+  return isArchivedMailbox ? UNARCHIVE_ACTION : ARCHIVE_ACTION;
+}
+
+function actionsForMailbox(
+  actions: AIAction[],
+  isArchivedMailbox: boolean,
+): AIAction[] {
+  return orderSuggestedActions(actions).concat(
+    mailboxActionForMailbox(isArchivedMailbox),
+  );
+}
+
+function clampSuggestionCount(value: number | undefined, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(10, Math.max(1, Math.round(value as number)));
+}
 
 /* ------------------------------------------------------------------ */
 /* Email body renderer                                                 */
@@ -312,14 +416,48 @@ export default function GmailPage() {
   const [composeBody, setComposeBody] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  const [pendingReplyReviewThreadId, setPendingReplyReviewThreadId] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [aiActions, setAiActions] = useState<AIAction[]>([]);
+  const [aiActions, setAiActions] = useState<AIAction[]>([ARCHIVE_ACTION]);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [expandedAction, setExpandedAction] = useState<number | null>(null);
+  const [reviewActionIndex, setReviewActionIndex] = useState(0);
+  const [suggestionCacheVersion, setSuggestionCacheVersion] = useState(0);
   const aiCacheRef = useRef<Map<string, AIAction[]>>(new Map());
+  const suggestionInFlightRef = useRef<Set<string>>(new Set());
+  const suggestionFailedRef = useRef<Set<string>>(new Set());
+  const activeThreadIdRef = useRef<string | null>(null);
+  const threadRequestVersionRef = useRef(0);
+  const analysisPromisesRef = useRef<Map<string, Promise<AIAction[]>>>(new Map());
+  const analysisControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const analysisEpochRef = useRef(0);
+  const activeLoadingThreadRef = useRef<string | null>(null);
+  const archivedMailboxRef = useRef(false);
+
+  const gmailSettings =
+    (state.pageSettings.features.mail as GmailPluginSettings | undefined) ??
+    DEFAULT_GMAIL_SETTINGS;
+  const suggestionTarget = clampSuggestionCount(
+    gmailSettings.suggestionPrecomputeCount,
+    5,
+  );
+  const suggestionActionTarget = clampSuggestionCount(
+    gmailSettings.suggestionActionCount,
+    6,
+  );
+  const isArchivedMailbox = query === ARCHIVED_QUERY;
+  archivedMailboxRef.current = isArchivedMailbox;
+  const quickReviewEnabled = gmailSettings.quickReviewEnabled ?? false;
+  const reviewKeys = {
+    next: gmailSettings.reviewNextActionKey ?? "j",
+    previous: gmailSettings.reviewPreviousActionKey ?? "k",
+    apply: gmailSettings.reviewApplyKey ?? "e",
+    skip: gmailSettings.reviewSkipKey ?? "x",
+    applyOnly: gmailSettings.reviewApplyOnlyKey ?? "a",
+  };
 
   const threadListResize = useResizable({
     side: "right",
@@ -350,6 +488,10 @@ export default function GmailPage() {
     gmail.threads.find((t) => t.id === activeThreadId) ?? null;
 
   useEffect(() => {
+    activeThreadIdRef.current = activeThreadId;
+  }, [activeThreadId]);
+
+  useEffect(() => {
     dispatch({ type: "SET_FEATURE_DATA", featureId: "mail", data: gmail.threads });
   }, [gmail.threads, dispatch]);
 
@@ -358,6 +500,29 @@ export default function GmailPage() {
     gmail.fetchThreads(q).catch(() => setAuthError(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
+
+  const mailPrefill = state.pagePrefills.mail as MailPrefill | undefined;
+  useEffect(() => {
+    if (!mailPrefill) return;
+    dispatch({ type: "CLEAR_PAGE_PREFILL", pageId: "mail" });
+    if (mailPrefill.reviewCompletedThreadId) {
+      void handleArchive(mailPrefill.reviewCompletedThreadId);
+      return;
+    }
+    if (mailPrefill.query) {
+      setSearchInput(mailPrefill.query);
+      setQuery(mailPrefill.query);
+      return;
+    }
+    setReplyTo(null);
+    setComposeTo(mailPrefill.to ?? "");
+    setComposeSubject(mailPrefill.subject ?? "");
+    setComposeBody(mailPrefill.body ?? "");
+    setComposeOpen(true);
+    // handleArchive is render-local; the one-shot prefill is the trigger and
+    // is cleared before archival starts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mailPrefill, dispatch]);
 
   useEffect(() => {
     const interval = state.pageSettings.general.autoRefreshInterval;
@@ -370,39 +535,60 @@ export default function GmailPage() {
   }, [state.pageSettings.general.autoRefreshInterval, query]);
 
   async function openThread(id: string) {
+    for (const [threadId, controller] of analysisControllersRef.current) {
+      if (threadId !== id) controller.abort();
+    }
+    const requestVersion = ++threadRequestVersionRef.current;
+    activeThreadIdRef.current = id;
     setActiveThreadId(id);
     setAiError("");
     setExpandedAction(null);
+    setReviewActionIndex(0);
+    setMessages([]);
+    setAiLoading(false);
+    activeLoadingThreadRef.current = null;
     setThreadLoading(true);
     const cached = aiCacheRef.current.get(id);
-    if (cached) setAiActions(cached);
-    else setAiActions([]);
+    if (cached) setAiActions(actionsForMailbox(cached, isArchivedMailbox));
+    else {
+      setAiActions([
+        mailboxActionForMailbox(isArchivedMailbox),
+      ]);
+    }
     try {
       const msgs = await gmail.fetchThread(id);
-      if (!msgs) return;
+      if (
+        !msgs ||
+        requestVersion !== threadRequestVersionRef.current ||
+        activeThreadIdRef.current !== id
+      ) return;
       setMessages(msgs);
       gmail.setThreads((prev) =>
         prev.map((x) => (x.id === id ? { ...x, unread: false } : x)),
       );
       if (!cached && state.aiServerAvailable && msgs.length > 0)
-        generateAIActions(id, msgs);
+        void generateAIActions(id, msgs);
     } finally {
-      setThreadLoading(false);
+      if (requestVersion === threadRequestVersionRef.current) {
+        setThreadLoading(false);
+      }
     }
   }
 
-  async function generateAIActions(threadId: string, msgs: GmailMessage[]) {
-    setAiLoading(true);
-    setAiError("");
-    try {
+  async function analyzeMessages(
+    msgs: GmailMessage[],
+    signal?: AbortSignal,
+  ): Promise<AIAction[]> {
       const latest = msgs[msgs.length - 1];
       const bodyText = latest.body.includes("<")
         ? stripHtml(latest.body, 2000)
         : latest.body.slice(0, 2000);
+      const minimumTarget = Math.max(1, suggestionActionTarget - 2);
+      const maximumTarget = Math.min(10, suggestionActionTarget + 2);
       const prompt = `Analyze the following email and suggest helpful actions. Return a JSON array of actions that would genuinely help the user manage this email.
 
 Each action must have:
-- "type": one of archive, create_event, create_task, add_to_notes, reply_draft, star_email
+- "type": one of create_event, create_task, add_to_notes, reply_draft, star_email
 - "label": short label (≤6 words)
 - "description": 1-2 sentences explaining what this action will do and why it's useful
 - Optional "payload": object with title, description, dateHint (YYYY-MM-DD), startHint (ISO 8601 datetime e.g. 2024-03-15T14:00:00), endHint (ISO 8601 datetime e.g. 2024-03-15T15:00:00), replyDraft fields as appropriate
@@ -412,8 +598,10 @@ Guidelines:
 - Suggest create_task if the email contains any task, assignment, deadline, or action item
 - Suggest add_to_notes if the email has useful information to reference later
 - Suggest reply_draft if a reply would be appropriate
-- Suggest archive if the email is informational and doesn't need action
 - Suggest star_email sparingly - only for truly important emails worth keeping starred
+- You may return multiple actions of the same type only when they represent genuinely distinct tasks, events, or replies. Do not repeat equivalent actions.
+- Do not return an archive action; the app always adds it separately.
+- Return roughly ${suggestionActionTarget} distinct useful actions whenever the message provides enough material (normally ${minimumTarget}-${maximumTarget}). Return fewer only when additional actions would be genuinely misleading.
 
 For create_event actions, extract any dates/times mentioned. Use startHint/endHint for datetime, dateHint for date-only.
 
@@ -425,15 +613,36 @@ Date: ${latest.date}
 Body: ${bodyText}
 
 Example: [{"type":"create_event","label":"Schedule meeting","description":"Creates a calendar event for the meeting mentioned on March 15th with the project team.","payload":{"title":"Team Meeting","description":"Discuss Q1 results","dateHint":"2024-03-15","startHint":"2024-03-15T14:00:00","endHint":"2024-03-15T15:00:00"}}]`;
-      const response = await aiChat(
-        state.aiServerUrl,
-        prompt,
-        state.assistantModel || undefined,
+      const response = await withTimeout(
+        aiChat(
+          state.aiServerUrl,
+          prompt,
+          state.assistantModel || undefined,
+          undefined,
+          signal,
+        ),
+        MAIL_AI_TIMEOUT_MS,
       );
-      const jsonMatch = response.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) throw new Error("No JSON in response");
-      const parsed: AIAction[] = JSON.parse(jsonMatch[0]);
-      const actions = parsed
+      let parsed: AIAction[];
+      try {
+        parsed = parseJsonArray<AIAction>(response);
+      } catch {
+        // A weak/local model may understand the email but fail to serialize
+        // its suggestions. Give it one short correction pass before showing
+        // an error to the user.
+        const corrected = await withTimeout(
+          aiChat(
+            state.aiServerUrl,
+            `Convert the response below into a compact, valid JSON array. Preserve only actions with type, label, description, and optional payload. Return ONLY JSON with no markdown or explanation.\n\n${response}`,
+            state.assistantModel || undefined,
+            undefined,
+            signal,
+          ),
+          MAIL_AI_TIMEOUT_MS,
+        );
+        parsed = parseJsonArray<AIAction>(corrected);
+      }
+      const usableActions = parsed
         .filter(
           (a) =>
             a.type &&
@@ -442,26 +651,198 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
             (a.type !== "create_event" || hasCalendar) &&
             (a.type !== "create_task" || hasTasks) &&
             (a.type !== "add_to_notes" || hasNotes),
-        )
-        .slice(0, 6);
-      setAiActions(actions);
+        );
+      // Do not issue a second expansion request: single-slot local servers
+      // would queue it behind precomputation and make navigation appear stuck.
+      // Fill a sparse response with safe local actions instead.
+      if (usableActions.length < minimumTarget) {
+        usableActions.push(...fallbackActions(msgs));
+      }
+      return orderSuggestedActions(usableActions).slice(0, maximumTarget);
+  }
+
+  function fallbackActions(msgs: GmailMessage[]): AIAction[] {
+    const latest = msgs[msgs.length - 1];
+    const actions: AIAction[] = [
+      {
+        type: "reply_draft",
+        label: "Draft reply",
+        description: "Starts a reply draft for this conversation.",
+      },
+      {
+        type: "star_email",
+        label: "Star email",
+        description: "Marks this conversation as important.",
+      },
+    ];
+    if (hasTasks) {
+      actions.push({
+        type: "create_task",
+        label: "Create follow-up task",
+        description: "Creates a task so this email is not forgotten.",
+        payload: { title: latest?.subject || "Email follow-up" },
+      });
+    }
+    if (hasNotes) {
+      actions.push({
+        type: "add_to_notes",
+        label: "Save to notes",
+        description: "Keeps the email content in your Mail notes category.",
+        payload: { title: latest?.subject || "Email note" },
+      });
+    }
+    return orderSuggestedActions(actions);
+  }
+
+  async function generateAIActions(
+    threadId: string,
+    msgs: GmailMessage[],
+    background = false,
+  ): Promise<AIAction[]> {
+    const analysisEpoch = analysisEpochRef.current;
+    if (!background && activeThreadIdRef.current === threadId) {
+      setAiLoading(true);
+      setAiError("");
+      activeLoadingThreadRef.current = threadId;
+    }
+    let analysisPromise = analysisPromisesRef.current.get(threadId);
+    const createdAnalysis = !analysisPromise;
+    if (!analysisPromise) {
+      const controller = new AbortController();
+      analysisControllersRef.current.set(threadId, controller);
+      analysisPromise = analyzeMessages(msgs, controller.signal);
+      analysisPromisesRef.current.set(threadId, analysisPromise);
+    }
+    try {
+      const actions = await analysisPromise;
+      if (analysisEpochRef.current !== analysisEpoch) return actions;
       aiCacheRef.current.set(threadId, actions);
+      setSuggestionCacheVersion((version) => version + 1);
+      if (activeThreadIdRef.current === threadId) {
+        setAiActions(actionsForMailbox(actions, archivedMailboxRef.current));
+        setReviewActionIndex(0);
+      }
+      return actions;
     } catch (err: unknown) {
-      setAiError(err instanceof Error ? err.message : "AI analysis failed");
+      if (
+        !background &&
+        analysisEpochRef.current === analysisEpoch &&
+        activeThreadIdRef.current === threadId
+      ) {
+        setAiError(err instanceof Error ? err.message : "AI analysis failed");
+        const fallback = fallbackActions(msgs);
+        setAiActions(actionsForMailbox(fallback, archivedMailboxRef.current));
+        aiCacheRef.current.set(threadId, fallback);
+      }
+      if (background) throw err;
+      return fallbackActions(msgs);
     } finally {
-      setAiLoading(false);
+      if (createdAnalysis && analysisPromisesRef.current.get(threadId) === analysisPromise) {
+        analysisPromisesRef.current.delete(threadId);
+        analysisControllersRef.current.delete(threadId);
+      }
+      if (
+        !background &&
+        analysisEpochRef.current === analysisEpoch &&
+        activeThreadIdRef.current === threadId &&
+        activeLoadingThreadRef.current === threadId
+      ) {
+        setAiLoading(false);
+        activeLoadingThreadRef.current = null;
+      }
     }
   }
 
-  function executeAction(action: AIAction) {
+  useEffect(() => {
+    analysisEpochRef.current += 1;
+    aiCacheRef.current.clear();
+    suggestionInFlightRef.current.clear();
+    suggestionFailedRef.current.clear();
+    analysisPromisesRef.current.clear();
+    for (const controller of analysisControllersRef.current.values()) {
+      controller.abort();
+    }
+    analysisControllersRef.current.clear();
+    setAiLoading(false);
+    activeLoadingThreadRef.current = null;
+    setAiError("");
+    setSuggestionCacheVersion((version) => version + 1);
+  }, [state.aiServerUrl, state.assistantModel, suggestionActionTarget]);
+
+  useEffect(() => {
+    if (!state.aiServerAvailable || gmail.threads.length === 0) return;
+    const candidates = selectSuggestionPrecomputeCandidates(
+      gmail.threads,
+      new Set(aiCacheRef.current.keys()),
+      new Set([
+        ...suggestionInFlightRef.current,
+        ...suggestionFailedRef.current,
+      ]),
+      suggestionTarget,
+      PRECOMPUTE_CONCURRENCY - suggestionInFlightRef.current.size,
+      activeThreadId,
+    );
+    for (const threadId of candidates) {
+      suggestionInFlightRef.current.add(threadId);
+      const scheduleRetry = () => {
+        suggestionFailedRef.current.add(threadId);
+        window.setTimeout(() => {
+          suggestionFailedRef.current.delete(threadId);
+          setSuggestionCacheVersion((version) => version + 1);
+        }, 30_000);
+      };
+      void gmail.fetchThread(threadId, true).then(async (threadMessages) => {
+        if (threadMessages?.length) {
+          try {
+            await generateAIActions(threadId, threadMessages, true);
+          } catch {
+            scheduleRetry();
+          }
+        } else {
+          scheduleRetry();
+        }
+      }).finally(() => {
+        suggestionInFlightRef.current.delete(threadId);
+        setSuggestionCacheVersion((version) => version + 1);
+      });
+    }
+    // This queue intentionally keys off cache-version updates; depending on
+    // the render-local orchestration functions would restart it every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    gmail.threads,
+    state.aiServerAvailable,
+    suggestionTarget,
+    suggestionCacheVersion,
+    activeThreadId,
+  ]);
+
+  const readySuggestionCount = countReadySuggestions(
+    gmail.threads,
+    new Set(aiCacheRef.current.keys()),
+    suggestionTarget,
+    activeThreadId,
+  );
+  const suggestionWindowTotal = suggestionWindowCount(
+    gmail.threads,
+    activeThreadId,
+    suggestionTarget,
+  );
+
+  async function executeAction(action: AIAction, reviewMode = false) {
     const emailBody =
       messages.length > 0
         ? buildThreadEmailContext(messages)
         : (activeThread?.snippet ?? "");
+    const reviewOrigin =
+      reviewMode && activeThread ? { threadId: activeThread.id } : undefined;
 
     switch (action.type) {
       case "archive":
-        if (activeThread) handleArchive(activeThread.id);
+        if (activeThread) await handleArchive(activeThread.id);
+        break;
+      case "unarchive":
+        if (activeThread) await handleUnarchive(activeThread.id);
         break;
       case "create_event":
         if (!hasCalendar) {
@@ -479,6 +860,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
             startHint: action.payload?.startHint,
             endHint: action.payload?.endHint,
             emailContext: emailBody || undefined,
+            reviewOrigin,
           },
         });
         dispatch({ type: "SET_ACTIVE_PAGE", id: "calendar" });
@@ -499,6 +881,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
               action.payload?.description ?? activeThread?.snippet ?? "",
             dueDate: action.payload?.dateHint,
             emailContext: emailBody || undefined,
+            reviewOrigin,
           },
         });
         dispatch({ type: "SET_ACTIVE_PAGE", id: "tasks" });
@@ -516,6 +899,9 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
             title:
               action.payload?.title ?? activeThread?.subject ?? "Email note",
             content: action.payload?.description ?? emailBody,
+            category: "Mail notes",
+            source: "mail",
+            reviewOrigin,
           },
         });
         dispatch({ type: "SET_ACTIVE_PAGE", id: "notes" });
@@ -525,20 +911,22 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
       case "reply_draft":
         if (messages.length) {
           openReply(messages[messages.length - 1]);
+          setPendingReplyReviewThreadId(reviewOrigin?.threadId ?? null);
           if (action.payload?.replyDraft)
             setComposeBody(action.payload.replyDraft);
         }
         break;
       case "star_email":
         if (activeThread)
-          gmail.toggleStar(activeThread.id, !activeThread.starred);
+          await gmail.toggleStar(activeThread.id, !activeThread.starred);
         break;
     }
   }
 
   async function handleArchive(id: string, e?: React.MouseEvent) {
     e?.stopPropagation();
-    await gmail.archiveThread(id);
+    const archived = await gmail.archiveThread(id);
+    if (!archived) return false;
     setSelected((prev) => {
       const next = new Set(prev);
       next.delete(id);
@@ -546,7 +934,8 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
     });
     if (activeThreadId === id) {
       aiCacheRef.current.delete(id);
-      setAiActions([]);
+      setSuggestionCacheVersion((version) => version + 1);
+      setAiActions([ARCHIVE_ACTION]);
       // Advance to the next thread in the list
       const remaining = gmail.threads.filter((t) => t.id !== id);
       const currentIdx = gmail.threads.findIndex((t) => t.id === id);
@@ -554,11 +943,12 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
       if (next) openThread(next.id);
       else setActiveThreadId(null);
     }
+    return true;
   }
 
-  async function handleTrash(id: string, e?: React.MouseEvent) {
-    e?.stopPropagation();
-    await gmail.trashThread(id);
+  async function handleUnarchive(id: string) {
+    const unarchived = await gmail.unarchiveThread(id);
+    if (!unarchived) return false;
     setSelected((prev) => {
       const next = new Set(prev);
       next.delete(id);
@@ -566,23 +956,148 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
     });
     if (activeThreadId === id) {
       aiCacheRef.current.delete(id);
-      setAiActions([]);
+      setSuggestionCacheVersion((version) => version + 1);
+      const remaining = gmail.threads.filter((thread) => thread.id !== id);
+      const currentIndex = gmail.threads.findIndex((thread) => thread.id === id);
+      const next =
+        remaining[currentIndex] ?? remaining[currentIndex - 1] ?? null;
+      if (next) void openThread(next.id);
+      else setActiveThreadId(null);
+    }
+    return true;
+  }
+
+  async function handleTrash(id: string, e?: React.MouseEvent) {
+    e?.stopPropagation();
+    const trashed = await gmail.trashThread(id);
+    if (!trashed) return false;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    if (activeThreadId === id) {
+      aiCacheRef.current.delete(id);
+      setSuggestionCacheVersion((version) => version + 1);
+      setAiActions([ARCHIVE_ACTION]);
       const remaining = gmail.threads.filter((t) => t.id !== id);
       const currentIdx = gmail.threads.findIndex((t) => t.id === id);
       const next = remaining[currentIdx] ?? remaining[currentIdx - 1] ?? null;
       if (next) openThread(next.id);
       else setActiveThreadId(null);
     }
+    return true;
   }
 
   async function bulkArchive() {
-    await Promise.all([...selected].map((id) => handleArchive(id)));
+    await Promise.all(
+      [...selected].map((id) =>
+        isArchivedMailbox ? handleUnarchive(id) : handleArchive(id),
+      ),
+    );
     setSelected(new Set());
   }
   async function bulkTrash() {
     await Promise.all([...selected].map((id) => handleTrash(id)));
     setSelected(new Set());
   }
+
+  function advanceWithoutArchive() {
+    if (gmail.threads.length === 0) return;
+    const currentIndex = gmail.threads.findIndex(
+      (thread) => thread.id === activeThreadId,
+    );
+    const nextIndex = currentIndex < 0
+      ? 0
+      : (currentIndex + 1) % gmail.threads.length;
+    void openThread(gmail.threads[nextIndex].id);
+  }
+
+  async function reviewSelectedAction(archiveAfterAction: boolean) {
+    if (!activeThread) {
+      advanceWithoutArchive();
+      return;
+    }
+    const actions = actionsForMailbox(aiActions, isArchivedMailbox);
+    const action = actions[Math.min(reviewActionIndex, actions.length - 1)];
+    if (!action) return;
+    const threadId = activeThread.id;
+    await executeAction(action, archiveAfterAction);
+    const waitsForDestination = waitsForReviewDestination(action.type);
+    if (
+      archiveAfterAction &&
+      action.type !== "archive" &&
+      action.type !== "unarchive" &&
+      !waitsForDestination
+    ) {
+      await handleArchive(threadId);
+    }
+  }
+
+  useEffect(() => {
+    const actionCount = actionsForMailbox(aiActions, isArchivedMailbox).length;
+    if (reviewActionIndex >= actionCount) setReviewActionIndex(0);
+  }, [aiActions, isArchivedMailbox, reviewActionIndex]);
+
+  useEffect(() => {
+    const activePage = state.pages.find((page) => page.id === state.activePage);
+    if (
+      activePage?.type !== "mail" ||
+      !quickReviewEnabled ||
+      composeOpen ||
+      state.aiOverlayOpen
+    ) return;
+    function handleReviewKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable
+      ) return;
+
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      const actions = actionsForMailbox(aiActions, isArchivedMailbox);
+      const command = quickReviewCommandForKey(event.key, gmailSettings);
+      if (command === "previous-action" || command === "next-action") {
+        event.preventDefault();
+        const direction = command === "next-action" ? 1 : -1;
+        setReviewActionIndex((index) =>
+          (index + direction + actions.length) % actions.length,
+        );
+        return;
+      }
+      if (command === "skip") {
+        event.preventDefault();
+        advanceWithoutArchive();
+        return;
+      }
+      if (command === "apply" || command === "apply-only") {
+        event.preventDefault();
+        void reviewSelectedAction(command === "apply");
+      }
+    }
+    window.addEventListener("keydown", handleReviewKey);
+    return () => window.removeEventListener("keydown", handleReviewKey);
+    // The listener is recreated for the visible review state. The two local
+    // orchestration functions are deliberately captured by that render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeThreadId,
+    aiActions,
+    composeOpen,
+    isArchivedMailbox,
+    reviewActionIndex,
+    state.activePage,
+    state.aiOverlayOpen,
+    state.pages,
+    quickReviewEnabled,
+    reviewKeys.next,
+    reviewKeys.previous,
+    reviewKeys.apply,
+    reviewKeys.skip,
+    reviewKeys.applyOnly,
+  ]);
 
   function toggleSelect(id: string, e: React.MouseEvent) {
     e.stopPropagation();
@@ -612,11 +1127,17 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
   }
 
   function openCompose() {
+    setPendingReplyReviewThreadId(null);
     setReplyTo(null);
     setComposeTo("");
     setComposeSubject("");
     setComposeBody("");
     setComposeOpen(true);
+  }
+
+  function closeCompose() {
+    setComposeOpen(false);
+    setPendingReplyReviewThreadId(null);
   }
 
   async function handleSend() {
@@ -634,8 +1155,13 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
       inReplyTo: replyTo?.id,
     });
     setSending(false);
-    if (ok) setComposeOpen(false);
-    else setSendError("Failed to send");
+    if (!ok) {
+      setSendError("Failed to send");
+      return;
+    }
+    const reviewedThreadId = pendingReplyReviewThreadId;
+    closeCompose();
+    if (reviewedThreadId) await handleArchive(reviewedThreadId);
   }
 
   /* ── Render ───────────────────────────────────────────────────── */
@@ -700,30 +1226,55 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
             </button>
           </div>
 
-          {/* Filter tabs — selected highlighted, unselected shown as muted options */}
-          <div className="flex items-center px-4 py-2.5 border-b border-border">
-            <div className="flex w-full border border-border-2 rounded-lg overflow-hidden">
-              {["in:inbox", "is:unread", "is:starred", "in:sent"].map((q) => {
-                const isActive = query === q || (!query && q === "in:inbox");
-                const label = q.replace("in:", "").replace("is:", "");
+          {/* Keep every mailbox on one row and scroll only when necessary. */}
+          <div className="mail-filter-scroll overflow-x-auto border-b border-border px-4 py-2.5">
+            <div className="flex min-w-max gap-1">
+              {[
+                { query: "in:inbox", label: "Inbox", icon: Inbox },
+                { query: "is:unread", label: "Unread", icon: MailOpen },
+                { query: "is:starred", label: "Starred", icon: Star },
+                { query: "in:sent", label: "Sent", icon: Send },
+                {
+                  query: ARCHIVED_QUERY,
+                  label: "Archived",
+                  icon: ArchiveRestore,
+                },
+              ].map(({ query: mailboxQuery, label, icon: Icon }) => {
+                const isActive =
+                  query === mailboxQuery ||
+                  (!query && mailboxQuery === "in:inbox");
                 return (
                   <button
-                    key={q}
+                    key={mailboxQuery}
                     onClick={() => {
-                      setQuery(q);
+                      analysisEpochRef.current += 1;
+                      for (const controller of analysisControllersRef.current.values()) {
+                        controller.abort();
+                      }
+                      analysisControllersRef.current.clear();
+                      analysisPromisesRef.current.clear();
+                      setQuery(mailboxQuery);
                       setSearchInput("");
                       setSelected(new Set());
+                      activeThreadIdRef.current = null;
+                      setActiveThreadId(null);
+                      setMessages([]);
+                      setAiActions([
+                        mailboxActionForMailbox(mailboxQuery === ARCHIVED_QUERY),
+                      ]);
+                      setAiError("");
+                      setAiLoading(false);
+                      activeLoadingThreadRef.current = null;
+                      archivedMailboxRef.current = mailboxQuery === ARCHIVED_QUERY;
                     }}
-                    style={{ padding: "4px 8px", minWidth: 0 }}
-                    className={`flex-1 text-sm font-medium whitespace-nowrap transition-all ${
+                    className={`flex flex-shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all ${
                       isActive
-                        ? "bg-accent/15 text-accent"
-                        : "text-text-3 hover:text-text-2 hover:bg-surface-2/50"
-                    } ${q !== "in:sent" ? "border-r border-border-2" : ""}`}
+                        ? "border-accent/40 bg-accent/15 text-accent"
+                        : "border-border-2 text-text-3 hover:text-text-2 hover:bg-surface-2/50"
+                    }`}
                   >
-                    <span style={{ display: "block", width: "100%" }}>
-                      {label.charAt(0).toUpperCase() + label.slice(1)}
-                    </span>
+                    <Icon size={13} className="flex-shrink-0" aria-hidden="true" />
+                    <span className="truncate">{label}</span>
                   </button>
                 );
               })}
@@ -741,7 +1292,15 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                 style={{ padding: "4px 12px" }}
                 className="flex items-center gap-1.5 text-sm text-text-2 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
               >
-                <Archive size={14} /> Archive
+                {isArchivedMailbox ? (
+                  <>
+                    <ArchiveRestore size={14} /> Unarchive
+                  </>
+                ) : (
+                  <>
+                    <Archive size={14} /> Archive
+                  </>
+                )}
               </button>
               <button
                 onClick={bulkTrash}
@@ -920,7 +1479,11 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
           <div
             className="resize-handle"
             style={{ right: 0 }}
-            onMouseDown={threadListResize.onMouseDown}
+            onPointerDown={threadListResize.onPointerDown}
+            onPointerMove={threadListResize.onPointerMove}
+            onPointerUp={threadListResize.onPointerUp}
+            onPointerCancel={threadListResize.onPointerCancel}
+            onLostPointerCapture={threadListResize.onLostPointerCapture}
           />
         </aside>
       )}
@@ -987,11 +1550,23 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                     {activeThread.starred ? "Starred" : "Star"}
                   </button>
                   <button
-                    onClick={() => handleArchive(activeThread.id)}
+                    onClick={() =>
+                      isArchivedMailbox
+                        ? handleUnarchive(activeThread.id)
+                        : handleArchive(activeThread.id)
+                    }
                     style={{ padding: "2px 12px" }}
                     className="flex items-center gap-1.5 text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:border-success hover:text-success transition-all"
                   >
-                    <Archive size={14} /> Archive
+                    {isArchivedMailbox ? (
+                      <>
+                        <ArchiveRestore size={14} /> Unarchive
+                      </>
+                    ) : (
+                      <>
+                        <Archive size={14} /> Archive
+                      </>
+                    )}
                   </button>
                   <button
                     onClick={() => openReply(messages[messages.length - 1])}
@@ -1081,17 +1656,44 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
               <div
                 className="resize-handle"
                 style={{ left: 0 }}
-                onMouseDown={aiSidebarResize.onMouseDown}
+                onPointerDown={aiSidebarResize.onPointerDown}
+                onPointerMove={aiSidebarResize.onPointerMove}
+                onPointerUp={aiSidebarResize.onPointerUp}
+                onPointerCancel={aiSidebarResize.onPointerCancel}
+                onLostPointerCapture={aiSidebarResize.onLostPointerCapture}
               />
               <div className="flex items-center gap-2 px-4 py-3 border-b border-border/50">
                 <Sparkles size={13} className="text-accent" />
                 <span className="text-xs font-semibold text-text-2 uppercase tracking-wide">
                   Suggestions
                 </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    dispatch({
+                      type: "UPDATE_FEATURE_SETTINGS",
+                      featureId: "mail",
+                      settings: { quickReviewEnabled: !quickReviewEnabled },
+                    })
+                  }
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                    quickReviewEnabled
+                      ? "bg-accent/15 text-accent"
+                      : "bg-surface-2 text-text-3"
+                  }`}
+                >
+                  <kbd className="mr-1 font-mono uppercase">
+                    {gmailSettings.quickReviewToggleKey || "r"}
+                  </kbd>
+                  Review {quickReviewEnabled ? "on" : "off"}
+                </button>
+                <span className="ml-auto text-[10px] text-text-3" title="Precomputed suggestions">
+                  {readySuggestionCount}/{suggestionWindowTotal}
+                </span>
                 {aiLoading && (
                   <Loader2
                     size={11}
-                    className="animate-spin text-text-3 ml-auto"
+                    className="animate-spin text-text-3"
                   />
                 )}
               </div>
@@ -1103,6 +1705,23 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                 </div>
               )}
               <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+                {aiError && !aiLoading && state.aiServerAvailable && (
+                  <div className="flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/5 px-3 py-2">
+                    <p className="min-w-0 flex-1 text-xs text-danger leading-relaxed">
+                      {aiError}
+                    </p>
+                    <button
+                      onClick={() =>
+                        messages.length &&
+                        activeThreadId &&
+                        generateAIActions(activeThreadId, messages)
+                      }
+                      className="flex-shrink-0 text-xs text-accent hover:underline"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
                 {!state.aiServerAvailable ? (
                   <div className="flex flex-col items-center justify-center gap-3 py-8 px-3 text-center">
                     <Sparkles size={20} className="text-text-3" />
@@ -1121,22 +1740,6 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                     <Loader2 size={20} className="animate-spin" />
                     <span className="text-xs">Analysing…</span>
                   </div>
-                ) : aiError ? (
-                  <div className="flex flex-col gap-2 py-4 px-1">
-                    <p className="text-xs text-danger leading-relaxed">
-                      {aiError}
-                    </p>
-                    <button
-                      onClick={() =>
-                        messages.length &&
-                        activeThreadId &&
-                        generateAIActions(activeThreadId, messages)
-                      }
-                      className="text-xs text-accent hover:underline text-left"
-                    >
-                      Retry
-                    </button>
-                  </div>
                 ) : aiActions.length === 0 ? (
                   <div className="flex flex-col items-center justify-center gap-3 py-8 px-3 text-center">
                     <Sparkles size={20} className="text-text-3" />
@@ -1153,7 +1756,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                     </button>
                   </div>
                 ) : (
-                  aiActions.map((action, i) => {
+                  actionsForMailbox(aiActions, isArchivedMailbox).map((action, i) => {
                     const style = ACTION_STYLES[action.type];
                     const isExpanded = expandedAction === i;
                     const hasDetails = action.description || action.payload;
@@ -1164,11 +1767,35 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                         style={{
                           borderColor: style.border,
                           backgroundColor: style.bg,
+                          boxShadow:
+                            reviewActionIndex === i
+                              ? `0 0 0 2px ${style.border}`
+                              : undefined,
                         }}
                       >
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => executeAction(action)}
+                            onClick={() => {
+                              setReviewActionIndex(i);
+                              if (quickReviewEnabled) {
+                                void (async () => {
+                                  const threadId = activeThread?.id;
+                                  await executeAction(action, true);
+                                  const waitsForDestination =
+                                    waitsForReviewDestination(action.type);
+                                  if (
+                                    threadId &&
+                                    action.type !== "archive" &&
+                                    action.type !== "unarchive" &&
+                                    !waitsForDestination
+                                  ) {
+                                    await handleArchive(threadId);
+                                  }
+                                })();
+                              } else {
+                                void executeAction(action);
+                              }
+                            }}
                             className="flex items-center gap-2 flex-1 px-3 py-2 text-left text-sm font-medium transition-all hover:opacity-90 min-w-0"
                             style={{
                               color: style.color,
@@ -1241,16 +1868,23 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                   })
                 )}
                 {aiActions.length > 0 && !aiLoading && (
-                  <button
-                    onClick={() =>
-                      messages.length &&
-                      activeThreadId &&
-                      generateAIActions(activeThreadId, messages)
-                    }
-                    className="flex items-center gap-1.5 justify-center w-full mt-1 py-2 text-xs text-text-3 hover:text-text-2 border border-border-2 rounded-lg transition-colors"
-                  >
-                    <RefreshCw size={11} /> Re-analyse
-                  </button>
+                  <>
+                    {quickReviewEnabled && (
+                      <div className="rounded-lg border border-border/60 px-2.5 py-2 text-[10px] leading-relaxed text-text-3">
+                        {reviewKeys.previous}/{reviewKeys.next} choose · {reviewKeys.apply} apply + archive · {reviewKeys.skip} skip · {reviewKeys.applyOnly} apply only
+                      </div>
+                    )}
+                    <button
+                      onClick={() =>
+                        messages.length &&
+                        activeThreadId &&
+                        generateAIActions(activeThreadId, messages)
+                      }
+                      className="flex items-center gap-1.5 justify-center w-full mt-1 py-2 text-xs text-text-3 hover:text-text-2 border border-border-2 rounded-lg transition-colors"
+                    >
+                      <RefreshCw size={11} /> Re-analyse
+                    </button>
+                  </>
                 )}
               </div>
             </aside>
@@ -1274,7 +1908,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                 : "New Message"}
             </span>
             <button
-              onClick={() => setComposeOpen(false)}
+              onClick={closeCompose}
               className="text-text-3 hover:text-text p-1.5 rounded-lg hover:bg-surface-2 transition-colors"
             >
               <X size={14} />

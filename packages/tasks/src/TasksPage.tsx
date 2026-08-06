@@ -71,7 +71,6 @@ export default function TasksPage() {
 
   useEffect(() => {
     // Authentication is external state; initialize the remote task list once available.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (session?.accessToken) initList();
   }, [session?.accessToken, initList]);
 
@@ -83,14 +82,32 @@ export default function TasksPage() {
     });
   }, [tasks, dispatch]);
 
-  const taskPrefill = state.pagePrefills.tasks as TaskPrefill | undefined;
+  const taskPrefill = state.pagePrefills.tasks as
+    | TaskPrefill
+    | { taskId: string }
+    | undefined;
 
   useEffect(() => {
     if (!taskPrefill || !listId) return;
-    const { title, description, dueDate, emailContext } = taskPrefill;
+    if ("taskId" in taskPrefill) {
+      const task = tasks.find((candidate) => candidate.id === taskPrefill.taskId);
+      if (!task) return;
+      dispatch({ type: "CLEAR_PAGE_PREFILL", pageId: "tasks" });
+      startEditing(task);
+      return;
+    }
+    const { title, description, dueDate, emailContext, reviewOrigin } = taskPrefill;
     dispatch({ type: "CLEAR_PAGE_PREFILL", pageId: "tasks" });
-    createTask(title || "Untitled", description, dueDate, emailContext);
-  }, [taskPrefill]); // eslint-disable-line react-hooks/exhaustive-deps
+    void createTask(title || "Untitled", description, dueDate, emailContext).then((id) => {
+      if (!id || !reviewOrigin) return;
+      dispatch({
+        type: "SET_PAGE_PREFILL",
+        pageId: "mail",
+        prefill: { reviewCompletedThreadId: reviewOrigin.threadId },
+      });
+      dispatch({ type: "SET_ACTIVE_PAGE", id: "mail" });
+    });
+  }, [taskPrefill, listId, tasks, dispatch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const interval = state.pageSettings.general.autoRefreshInterval;

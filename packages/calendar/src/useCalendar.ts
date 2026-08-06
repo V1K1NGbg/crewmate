@@ -21,6 +21,7 @@ export function useCalendar() {
   const { state, notify } = useApp();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [authError, setAuthError] = useState(false);
 
   const calendarSettings =
     (state.pageSettings.features.calendar as
@@ -41,8 +42,12 @@ export function useCalendar() {
         params.set("calendarIds", enabledIds.join(","));
 
         const res = await fetch(`/api/calendar/events?${params}`);
-        if (!res.ok) throw new Error("Failed to fetch events");
+        if (!res.ok) {
+          if (res.status === 401) setAuthError(true);
+          throw new Error("Failed to fetch events");
+        }
         const data = await res.json();
+        setAuthError(false);
         setEvents(data.events);
       } catch {
         notify("Failed to load calendar events", "error");
@@ -71,7 +76,10 @@ export function useCalendar() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...rest, calendarId: targetCalendarId }),
         });
-        if (!res.ok) throw new Error("Create event failed");
+        if (!res.ok) {
+          if (res.status === 401) setAuthError(true);
+          throw new Error("Create event failed");
+        }
         const data = await res.json();
         setEvents((prev) => [...prev, data].sort(sortByStart));
         notify("Event created", "success");
@@ -99,7 +107,10 @@ export function useCalendar() {
             calendarId: calendarId ?? "primary",
           }),
         });
-        if (!res.ok) throw new Error("Update event failed");
+        if (!res.ok) {
+          if (res.status === 401) setAuthError(true);
+          throw new Error("Update event failed");
+        }
         const data = await res.json();
         setEvents((prev) =>
           prev.map((e) => (e.id === id ? data : e)).sort(sortByStart),
@@ -120,7 +131,10 @@ export function useCalendar() {
         const res = await fetch(`/api/calendar/events/${id}`, {
           method: "DELETE",
         });
-        if (!res.ok) throw new Error("Delete event failed");
+        if (!res.ok) {
+          if (res.status === 401) setAuthError(true);
+          throw new Error("Delete event failed");
+        }
         setEvents((prev) => prev.filter((e) => e.id !== id));
         notify("Event deleted", "success");
         return true;
@@ -135,6 +149,7 @@ export function useCalendar() {
   return {
     events,
     loading,
+    authError,
     fetchEvents,
     createEvent,
     updateEvent,
