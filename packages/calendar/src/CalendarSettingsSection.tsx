@@ -6,6 +6,7 @@ import { SettingRow, SettingToggle } from "@crewmate/lib";
 import type { FeatureSettingsProps } from "@crewmate/types";
 import type { CalendarPluginSettings, GoogleCalendarList } from "./settings";
 import { isCalendarEnabled, toggleEnabledCalendarId } from "./calendarSettings";
+import { isValidTimeZone } from "./googleCalendarEventTime";
 
 export default function CalendarSettingsSection({
   settings,
@@ -92,6 +93,11 @@ export default function CalendarSettingsSection({
             settings.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
           }
           onChange={(e) => onChange({ timezone: e.target.value })}
+          onBlur={(e) => {
+            if (!isValidTimeZone(e.target.value)) {
+              onChange({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+            }
+          }}
           placeholder="e.g. America/New_York"
         />
       </SettingRow>
@@ -171,7 +177,7 @@ export default function CalendarSettingsSection({
           >
             <option value="primary">Primary calendar</option>
             {calendarList
-              .filter((c) => !c.primary)
+              .filter((c) => !c.primary && c.writable)
               .map((cal) => (
                 <option key={cal.id} value={cal.id}>
                   {cal.summary}

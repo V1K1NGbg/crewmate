@@ -21,9 +21,8 @@ export default function TasksSettingsSection({
           }
         >
           <option value="all">All</option>
-          <option value="pending">Pending</option>
-          <option value="in-progress">In progress</option>
-          <option value="done">Done</option>
+          <option value="needsAction">Pending</option>
+          <option value="completed">Done</option>
         </select>
       </SettingRow>
       <SettingRow label="Sort by">
@@ -34,9 +33,9 @@ export default function TasksSettingsSection({
             onChange({ sortBy: e.target.value as TasksPluginSettings["sortBy"] })
           }
         >
-          <option value="priority">Priority</option>
+          <option value="position">Google Tasks order</option>
           <option value="dueDate">Due date</option>
-          <option value="createdAt">Created date</option>
+          <option value="updatedAt">Recently updated</option>
         </select>
       </SettingRow>
     </>

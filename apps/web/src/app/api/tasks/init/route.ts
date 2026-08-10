@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { isAuthError, getTasksClient } from "@crewmate/lib/server";
+import { getTasksClient } from "@crewmate/lib/server";
+import { googleErrorResponse } from "@/lib/google-error-response";
 
 const LIST_NAME = "Crewmate Tasks";
 
@@ -37,10 +38,6 @@ export async function POST() {
       title: created.data.title,
     });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[tasks/init]", err);
-    if (isAuthError(err))
-      return NextResponse.json({ error: msg || "Unauthorized" }, { status: 401 });
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return googleErrorResponse(err, "tasks/init POST");
   }
 }

@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { isAuthError, getCalendarClient } from "@crewmate/lib/server";
+import { getCalendarClient } from "@crewmate/lib/server";
+import { googleErrorResponse } from "@/lib/google-error-response";
 
 export async function GET() {
   const session = await auth();
@@ -18,12 +19,11 @@ export async function GET() {
       backgroundColor: item.backgroundColor,
       foregroundColor: item.foregroundColor,
       primary: item.primary ?? false,
+      accessRole: item.accessRole,
+      writable: item.accessRole === "writer" || item.accessRole === "owner",
     }));
     return NextResponse.json({ calendars: items });
   } catch (err: unknown) {
-    if (isAuthError(err))
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const msg = err instanceof Error ? err.message : "Internal error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return googleErrorResponse(err, "calendar/lists GET");
   }
 }

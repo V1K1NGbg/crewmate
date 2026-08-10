@@ -22,33 +22,41 @@ export interface GmailMessage {
   from: string;
   to: string;
   date: string;
+  messageId: string;
   snippet: string;
   body: string;
   labelIds: string[];
 }
 
 export function useGmail() {
-  const { notify } = useApp();
+  const { state, notify } = useApp();
   const [threads, setThreads] = useState<GmailThread[]>([]);
   const [loading, setLoading] = useState(false);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const requestVersionRef = useRef(0);
 
   const fetchThreads = useCallback(
     async (query = "in:inbox", pageToken?: string) => {
       abortRef.current?.abort();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
+      const requestVersion = ++requestVersionRef.current;
 
       setLoading(true);
       try {
         const params = new URLSearchParams({ q: query });
+        const configuredLimit = Number(
+          (state.pageSettings.features.mail as { maxThreads?: number } | undefined)?.maxThreads,
+        );
+        params.set("limit", String(Number.isFinite(configuredLimit) ? configuredLimit : 20));
         if (pageToken) params.set("pageToken", pageToken);
         const res = await fetch(`/api/gmail/threads?${params}`, {
           signal: ctrl.signal,
         });
         if (!res.ok) throw new Error("Failed to fetch threads");
         const data = await res.json();
+        if (requestVersion !== requestVersionRef.current) return;
         if (pageToken) {
           setThreads((prev) => [...prev, ...data.threads]);
         } else {
@@ -59,10 +67,10 @@ export function useGmail() {
         if (err instanceof DOMException && err.name === "AbortError") return;
         notify("Failed to load emails", "error");
       } finally {
-        setLoading(false);
+        if (requestVersion === requestVersionRef.current) setLoading(false);
       }
     },
-    [notify],
+    [notify, state.pageSettings.features.mail],
   );
 
   const fetchThread = useCallback(

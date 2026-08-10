@@ -1,11 +1,11 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import {
-  isAuthError,
   getGmailClient,
   decodeGmailBody,
   getGmailHeader,
 } from "@crewmate/lib/server";
+import { googleErrorResponse } from "@/lib/google-error-response";
 
 export async function GET(
   _req: Request,
@@ -36,6 +36,7 @@ export async function GET(
         from: getGmailHeader(headers, "From"),
         to: getGmailHeader(headers, "To"),
         date: getGmailHeader(headers, "Date"),
+        messageId: getGmailHeader(headers, "Message-ID"),
         snippet: msg.snippet ?? "",
         body: decodeGmailBody(
           msg.payload as Parameters<typeof decodeGmailBody>[0],
@@ -52,10 +53,7 @@ export async function GET(
 
     return NextResponse.json({ messages });
   } catch (err: unknown) {
-    if (isAuthError(err))
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const msg = err instanceof Error ? err.message : "Internal error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return googleErrorResponse(err, "gmail/thread GET");
   }
 }
 
@@ -82,10 +80,7 @@ export async function PATCH(
     });
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    if (isAuthError(err))
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const msg = err instanceof Error ? err.message : "Internal error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return googleErrorResponse(err, "gmail/thread PATCH");
   }
 }
 
@@ -112,10 +107,7 @@ export async function PUT(
     });
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    if (isAuthError(err))
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const msg = err instanceof Error ? err.message : "Internal error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return googleErrorResponse(err, "gmail/thread PUT");
   }
 }
 
@@ -134,9 +126,6 @@ export async function DELETE(
     await gmail.users.threads.trash({ userId: "me", id });
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    if (isAuthError(err))
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const msg = err instanceof Error ? err.message : "Internal error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return googleErrorResponse(err, "gmail/thread DELETE");
   }
 }

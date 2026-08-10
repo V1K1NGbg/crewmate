@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { isAuthError, getTasksClient } from "@crewmate/lib/server";
+import { getTasksClient } from "@crewmate/lib/server";
+import { googleErrorResponse } from "@/lib/google-error-response";
 
 /**
  * GET /api/tasks/items?listId=<taskListId>
@@ -38,10 +39,7 @@ export async function GET(req: Request) {
     } while (pageToken);
     return NextResponse.json({ items: allItems });
   } catch (err: unknown) {
-    if (isAuthError(err))
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const msg = err instanceof Error ? err.message : "Internal error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return googleErrorResponse(err, "tasks/items GET");
   }
 }
 
@@ -55,7 +53,11 @@ export async function POST(req: Request) {
   if (!session?.accessToken)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { listId, title, notes, due, parent } = (await req.json()) as {
+  const payload = await req.json().catch(() => null);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return NextResponse.json({ error: "Malformed JSON body" }, { status: 400 });
+  }
+  const { listId, title, notes, due, parent } = payload as {
     listId: string;
     title: string;
     notes?: string;
@@ -63,7 +65,7 @@ export async function POST(req: Request) {
     parent?: string;
   };
 
-  if (!listId || !title)
+  if (typeof listId !== "string" || typeof title !== "string" || !listId.trim() || !title.trim() || title.length > 1024 || (notes !== undefined && typeof notes !== "string") || (parent !== undefined && typeof parent !== "string") || (due !== undefined && (typeof due !== "string" || Number.isNaN(Date.parse(due)))))
     return NextResponse.json(
       { error: "Missing listId or title" },
       { status: 400 },
@@ -83,10 +85,7 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ task: res.data });
   } catch (err: unknown) {
-    if (isAuthError(err))
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const msg = err instanceof Error ? err.message : "Internal error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return googleErrorResponse(err, "tasks/items POST");
   }
 }
 
@@ -100,7 +99,11 @@ export async function PATCH(req: Request) {
   if (!session?.accessToken)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { listId, taskId, ...fields } = (await req.json()) as {
+  const payload = await req.json().catch(() => null);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return NextResponse.json({ error: "Malformed JSON body" }, { status: 400 });
+  }
+  const { listId, taskId, ...fields } = payload as {
     listId: string;
     taskId: string;
     title?: string;
@@ -109,7 +112,7 @@ export async function PATCH(req: Request) {
     due?: string;
   };
 
-  if (!listId || !taskId)
+  if (typeof listId !== "string" || typeof taskId !== "string" || !listId.trim() || !taskId.trim() || (fields.status !== undefined && fields.status !== "needsAction" && fields.status !== "completed") || (fields.due !== undefined && fields.due !== "" && (typeof fields.due !== "string" || Number.isNaN(Date.parse(fields.due)))) || (fields.title !== undefined && (typeof fields.title !== "string" || fields.title.length > 1024)) || (fields.notes !== undefined && typeof fields.notes !== "string"))
     return NextResponse.json(
       { error: "Missing listId or taskId" },
       { status: 400 },
@@ -132,10 +135,7 @@ export async function PATCH(req: Request) {
     });
     return NextResponse.json({ task: res.data });
   } catch (err: unknown) {
-    if (isAuthError(err))
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const msg = err instanceof Error ? err.message : "Internal error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return googleErrorResponse(err, "tasks/items PATCH");
   }
 }
 
@@ -163,9 +163,6 @@ export async function DELETE(req: Request) {
     await tasks.tasks.delete({ tasklist: listId, task: taskId });
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    if (isAuthError(err))
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const msg = err instanceof Error ? err.message : "Internal error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return googleErrorResponse(err, "tasks/items DELETE");
   }
 }

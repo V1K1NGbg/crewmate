@@ -10,7 +10,6 @@ import { getPlugin } from "@/plugins/registry";
 
 const AIAssistant = lazy(() => import("./AIAssistant"));
 const SettingsPanel = lazy(() => import("./SettingsPanel"));
-const CustomPage = lazy(() => import("./pages/CustomPage"));
 
 function PageFallback() {
   return (
@@ -140,7 +139,7 @@ export default function AppShell() {
 
   return (
     <div
-      className="crewmate-app flex h-screen overflow-hidden bg-bg"
+      className="crewmate-app flex h-dvh min-h-0 overflow-hidden bg-bg"
       data-component-spacing={state.pageSettings.general.componentSpacing}
     >
       <Navigation />
@@ -154,14 +153,14 @@ export default function AppShell() {
             {state.pages.map((page) => {
               const isActive = page.id === activePage?.id;
               const plugin = getPlugin(page.type);
-              if (!plugin && page.type !== "custom") return null;
+              if (!plugin) return null;
               return (
                 <div
                   key={page.id}
                   className="flex-1 flex overflow-hidden"
                   style={{ display: isActive ? "flex" : "none" }}
                 >
-                  {plugin ? <plugin.Page /> : <CustomPage url={page.url} />}
+                  <plugin.Page />
                 </div>
               );
             })}

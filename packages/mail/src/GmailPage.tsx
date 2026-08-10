@@ -28,7 +28,7 @@ import {
 import { format } from "date-fns";
 import { useSession, signIn } from "next-auth/react";
 import { useApp } from "@crewmate/state";
-import { aiChat, parseJsonArray, useResizable } from "@crewmate/lib";
+import { aiChat, parseJsonArray, useDialogFocus, useResizable } from "@crewmate/lib";
 import { useGmail, type GmailMessage } from "./useGmail";
 import type { MailPrefill } from "@crewmate/types";
 import { DEFAULT_GMAIL_SETTINGS, type GmailPluginSettings } from "./settings";
@@ -41,6 +41,12 @@ import {
   quickReviewCommandForKey,
   waitsForReviewDestination,
 } from "./quickReview";
+import {
+  buildEmailTranslationPrompt,
+  normalizeMainLanguage,
+  parseEmailTranslationResponse,
+  type EmailTranslationResult,
+} from "./translation";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -54,6 +60,12 @@ type AIActionType =
   | "add_to_notes"
   | "reply_draft"
   | "star_email";
+
+type MessageTranslation =
+  | { status: "loading" }
+  | { status: "same"; sourceLanguage: string }
+  | { status: "translated"; sourceLanguage: string; body: string }
+  | { status: "error" };
 
 interface AIAction {
   type: AIActionType;
@@ -281,6 +293,7 @@ const EMAIL_STYLES = `
 
 function EmailBody({ body, snippet }: { body: string; snippet: string }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [loadRemoteContent, setLoadRemoteContent] = useState(false);
   const isHtml = /<[a-z][\s\S]*>/i.test(body);
 
   function handleLoad() {
@@ -313,9 +326,18 @@ function EmailBody({ body, snippet }: { body: string; snippet: string }) {
     );
   }
 
-  const srcDoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_blank"><style>${EMAIL_STYLES}</style></head><body>${body}</body></html>`;
+  const contentPolicy = loadRemoteContent
+    ? "default-src 'none'; img-src https: http: data: cid:; style-src 'unsafe-inline' https: http:; font-src data: https: http:"
+    : "default-src 'none'; img-src data: cid:; style-src 'unsafe-inline'; font-src data:";
+  const srcDoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${contentPolicy}"><base target="_blank"><style>${EMAIL_STYLES}</style></head><body>${body}</body></html>`;
 
   return (
+    <div>
+    {!loadRemoteContent && (
+      <button className="mb-2 rounded-lg border border-border-2 px-3 py-1.5 text-xs text-text-2 hover:border-accent hover:text-accent" onClick={() => setLoadRemoteContent(true)}>
+        Load remote images
+      </button>
+    )}
     <iframe
       ref={iframeRef}
       srcDoc={srcDoc}
@@ -326,6 +348,7 @@ function EmailBody({ body, snippet }: { body: string; snippet: string }) {
       title="Email body"
       scrolling="no"
     />
+    </div>
   );
 }
 
@@ -382,7 +405,7 @@ function GoogleSignInPrompt({ reason }: { reason: string }) {
           Sign in with Google
         </button>
         <p className="text-xs text-text-3 text-center">
-          Grants access to Gmail &amp; Google Calendar
+          Grants access to Gmail, Google Calendar, Google Tasks &amp; Google Docs
         </p>
       </div>
     </div>
@@ -398,18 +421,28 @@ export default function GmailPage() {
   const { status: sessionStatus } = useSession();
   const gmail = useGmail();
 
+  const gmailSettings =
+    (state.pageSettings.features.mail as GmailPluginSettings | undefined) ??
+    DEFAULT_GMAIL_SETTINGS;
+
   const hasCalendar = state.pages.some((p) => p.type === "calendar");
   const hasTasks = state.pages.some((p) => p.type === "tasks");
   const hasNotes = state.pages.some((p) => p.type === "notes");
 
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<GmailMessage[]>([]);
+  const [translations, setTranslations] = useState<Record<string, MessageTranslation>>({});
+  const [translationBusy, setTranslationBusy] = useState(false);
+  const [showOriginalMessages, setShowOriginalMessages] = useState<Set<string>>(new Set());
+  const translationCacheRef = useRef<Map<string, EmailTranslationResult>>(new Map());
+  const translationControllerRef = useRef<AbortController | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
   const [authError, setAuthError] = useState(false);
-  const [query, setQuery] = useState("");
-  const [searchInput, setSearchInput] = useState("");
+  const [query, setQuery] = useState(gmailSettings.defaultQuery || "in:inbox");
+  const [searchInput, setSearchInput] = useState(gmailSettings.defaultQuery || "in:inbox");
 
   const [composeOpen, setComposeOpen] = useState(false);
+  const composeDialogRef = useDialogFocus(composeOpen);
   const [replyTo, setReplyTo] = useState<GmailMessage | null>(null);
   const [composeTo, setComposeTo] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
@@ -437,9 +470,6 @@ export default function GmailPage() {
   const activeLoadingThreadRef = useRef<string | null>(null);
   const archivedMailboxRef = useRef(false);
 
-  const gmailSettings =
-    (state.pageSettings.features.mail as GmailPluginSettings | undefined) ??
-    DEFAULT_GMAIL_SETTINGS;
   const suggestionTarget = clampSuggestionCount(
     gmailSettings.suggestionPrecomputeCount,
     5,
@@ -535,6 +565,9 @@ export default function GmailPage() {
   }, [state.pageSettings.general.autoRefreshInterval, query]);
 
   async function openThread(id: string) {
+    translationControllerRef.current?.abort();
+    setTranslations({});
+    setTranslationBusy(false);
     for (const [threadId, controller] of analysisControllersRef.current) {
       if (threadId !== id) controller.abort();
     }
@@ -563,6 +596,14 @@ export default function GmailPage() {
         activeThreadIdRef.current !== id
       ) return;
       setMessages(msgs);
+      setShowOriginalMessages(new Set());
+      if (
+        gmailSettings.autoTranslateForeignEmails &&
+        state.aiServerAvailable &&
+        msgs.length > 0
+      ) {
+        void translateMessages(msgs);
+      }
       gmail.setThreads((prev) =>
         prev.map((x) => (x.id === id ? { ...x, unread: false } : x)),
       );
@@ -574,6 +615,86 @@ export default function GmailPage() {
       }
     }
   }
+
+  async function translateMessages(messagesToTranslate: GmailMessage[]) {
+    translationControllerRef.current?.abort();
+    const controller = new AbortController();
+    translationControllerRef.current = controller;
+    setTranslationBusy(true);
+    const mainLanguage = normalizeMainLanguage(gmailSettings.mainLanguage);
+
+    for (const message of messagesToTranslate) {
+      if (controller.signal.aborted) break;
+      const cacheKey = `${mainLanguage}:${message.id}`;
+      const cached = translationCacheRef.current.get(cacheKey);
+      if (cached) {
+        setTranslations((current) => ({
+          ...current,
+          [message.id]: cached.sameLanguage
+            ? { status: "same", sourceLanguage: cached.sourceLanguage }
+            : { status: "translated", sourceLanguage: cached.sourceLanguage, body: cached.translation },
+        }));
+        continue;
+      }
+
+      setTranslations((current) => ({ ...current, [message.id]: { status: "loading" } }));
+      try {
+        const plainText = message.body.includes("<")
+          ? stripHtml(message.body, 12000)
+          : (message.body || message.snippet).slice(0, 12000);
+        const response = await withTimeout(
+          aiChat(
+            state.aiServerUrl,
+            buildEmailTranslationPrompt(plainText, mainLanguage),
+            state.assistantModel || undefined,
+            undefined,
+            controller.signal,
+          ),
+          MAIL_AI_TIMEOUT_MS,
+        );
+        const result = parseEmailTranslationResponse(response);
+        translationCacheRef.current.set(cacheKey, result);
+        setTranslations((current) => ({
+          ...current,
+          [message.id]: result.sameLanguage
+            ? { status: "same", sourceLanguage: result.sourceLanguage }
+            : { status: "translated", sourceLanguage: result.sourceLanguage, body: result.translation },
+        }));
+      } catch {
+        if (controller.signal.aborted) break;
+        setTranslations((current) => ({ ...current, [message.id]: { status: "error" } }));
+      }
+    }
+    if (translationControllerRef.current === controller) setTranslationBusy(false);
+  }
+
+  function toggleMessageTranslation(messageId: string) {
+    setShowOriginalMessages((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    setTranslations({});
+    setShowOriginalMessages(new Set());
+    if (
+      gmailSettings.autoTranslateForeignEmails &&
+      state.aiServerAvailable &&
+      messages.length > 0
+    ) {
+      void translateMessages(messages);
+    }
+    return () => translationControllerRef.current?.abort();
+    // Translation is intentionally restarted only when its configuration changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    gmailSettings.autoTranslateForeignEmails,
+    gmailSettings.mainLanguage,
+    state.aiServerAvailable,
+  ]);
 
   async function analyzeMessages(
     msgs: GmailMessage[],
@@ -969,6 +1090,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
 
   async function handleTrash(id: string, e?: React.MouseEvent) {
     e?.stopPropagation();
+    if (e && !window.confirm("Move this thread to Gmail Trash?")) return false;
     const trashed = await gmail.trashThread(id);
     if (!trashed) return false;
     setSelected((prev) => {
@@ -998,6 +1120,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
     setSelected(new Set());
   }
   async function bulkTrash() {
+    if (selected.size === 0 || !window.confirm(`Move ${selected.size} selected thread${selected.size === 1 ? "" : "s"} to Gmail Trash?`)) return;
     await Promise.all([...selected].map((id) => handleTrash(id)));
     setSelected(new Set());
   }
@@ -1152,7 +1275,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
       subject: composeSubject,
       body: composeBody,
       threadId: replyTo?.threadId,
-      inReplyTo: replyTo?.id,
+      inReplyTo: replyTo?.messageId,
     });
     setSending(false);
     if (!ok) {
@@ -1374,7 +1497,8 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                 <span className="text-sm">No messages</span>
               </div>
             ) : (
-              gmail.threads.map((t) => (
+              <>
+              {gmail.threads.map((t) => (
                 <div
                   key={t.id}
                   onClick={() => openThread(t.id)}
@@ -1473,7 +1597,19 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                     </div>
                   </div>
                 </div>
-              ))
+              ))}
+              {gmail.nextPageToken && (
+                <div className="p-3 text-center">
+                  <button
+                    className="rounded-lg border border-border-2 px-3 py-2 text-sm text-text-2 hover:border-accent hover:text-accent disabled:opacity-50"
+                    disabled={gmail.loading}
+                    onClick={() => void gmail.fetchThreads(query || "in:inbox", gmail.nextPageToken ?? undefined)}
+                  >
+                    {gmail.loading ? "Loading…" : "Load more"}
+                  </button>
+                </div>
+              )}
+              </>
             )}
           </div>
           <div
@@ -1577,6 +1713,8 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                   </button>
                   <button
                     onClick={() => {
+                      translationControllerRef.current?.abort();
+                      setTranslationBusy(false);
                       setActiveThreadId(null);
                       setMessages([]);
                       setAiActions([]);
@@ -1592,7 +1730,14 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
               {/* Messages */}
               <div className="flex-1 overflow-y-auto">
                 <div className="px-6 py-5 flex flex-col gap-5">
-                  {messages.map((msg, idx) => (
+                  {messages.map((msg, idx) => {
+                    const translation = translations[msg.id];
+                    const showingOriginal = showOriginalMessages.has(msg.id);
+                    const translatedBody =
+                      translation?.status === "translated" && !showingOriginal
+                        ? translation.body
+                        : msg.body;
+                    return (
                     <div
                       key={msg.id}
                       className="bg-surface border border-border-2 rounded-xl overflow-hidden"
@@ -1615,6 +1760,32 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                           </div>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
+                          {translation?.status === "loading" && (
+                            <span className="flex items-center gap-1 text-xs text-text-3">
+                              <Loader2 size={11} className="animate-spin" /> Translating…
+                            </span>
+                          )}
+                          {translation?.status === "translated" && (
+                            <button
+                              type="button"
+                              onClick={() => toggleMessageTranslation(msg.id)}
+                              className="rounded-lg border border-border-2 px-2 py-1 text-xs text-accent hover:bg-accent/10"
+                            >
+                              {showingOriginal
+                                ? `Show ${gmailSettings.mainLanguage || "English"}`
+                                : `Translated from ${translation.sourceLanguage} · Show original`}
+                            </button>
+                          )}
+                          {state.aiServerAvailable && !translationBusy &&
+                            (!translation || translation.status === "error") && (
+                              <button
+                                type="button"
+                                onClick={() => void translateMessages([msg])}
+                                className="rounded-lg border border-border-2 px-2 py-1 text-xs text-text-2 hover:border-accent hover:text-accent"
+                              >
+                                {translation?.status === "error" ? "Retry translation" : "Translate"}
+                              </button>
+                            )}
                           <span className="text-xs text-text-3">
                             {formatDate(msg.date)}
                           </span>
@@ -1629,7 +1800,7 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                       </div>
                       <div className="h-px bg-border" />
                       <div className="px-6 py-5 overflow-hidden">
-                        <EmailBody body={msg.body} snippet={msg.snippet} />
+                        <EmailBody body={translatedBody} snippet={msg.snippet} />
                       </div>
                       {idx === messages.length - 1 && (
                         <div className="px-5 pb-4">
@@ -1643,7 +1814,8 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                         </div>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -1895,7 +2067,12 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
       {/* Compose modal */}
       {composeOpen && (
         <div
-          className="absolute bottom-0 right-4 w-[520px] bg-surface border border-border-2 rounded-t-xl shadow-2xl z-50 flex flex-col"
+          ref={composeDialogRef}
+          tabIndex={-1}
+          className="absolute bottom-0 right-0 sm:right-4 w-full sm:w-[min(520px,calc(100%-2rem))] max-h-[90dvh] bg-surface border border-border-2 rounded-t-xl shadow-2xl z-50 flex flex-col"
+          role="dialog"
+          aria-modal="true"
+          aria-label={replyTo ? "Reply to email" : "Compose email"}
           style={{
             maxHeight: "calc(100vh - 60px)",
             animation: "slideUpLocal 0.2s ease-out both",

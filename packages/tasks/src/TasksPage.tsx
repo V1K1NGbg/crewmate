@@ -18,7 +18,7 @@ import {
 import { format } from "date-fns";
 import { useSession } from "next-auth/react";
 import { useApp } from "@crewmate/state";
-import { aiChat } from "@crewmate/lib";
+import { aiChat, useDialogFocus } from "@crewmate/lib";
 import type { TaskPrefill } from "@crewmate/types";
 import {
   useTasks,
@@ -26,14 +26,15 @@ import {
   type GoogleTask,
 } from "./useTasks";
 import { getTaskEmailContext } from "./taskEmailContext";
+import { DEFAULT_TASKS_SETTINGS, type TasksPluginSettings } from "./settings";
 
 const FILTER_OPTIONS = ["all", "needsAction", "completed"] as const;
 type FilterType = (typeof FILTER_OPTIONS)[number];
 
 export default function TasksPage() {
   const { state, dispatch, notify } = useApp();
-  const { data: session } = useSession();
-  const tasksApi = useTasks();
+  const { data: session, status: sessionStatus } = useSession();
+  const tasksApi = useTasks(session?.accountKey);
   const {
     listId,
     tasks,
@@ -48,13 +49,19 @@ export default function TasksPage() {
     updateTask,
   } = tasksApi;
 
-  const [filter, setFilter] = useState<FilterType>("all");
+  const tasksSettings =
+    (state.pageSettings.features.tasks as TasksPluginSettings | undefined) ??
+    DEFAULT_TASKS_SETTINGS;
+  const [filter, setFilter] = useState<FilterType>(tasksSettings.defaultFilter);
   const [expandingId, setExpandingId] = useState<string | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newNotes, setNewNotes] = useState("");
   const [newDue, setNewDue] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const deleteDialogRef = useDialogFocus(confirmDeleteId !== null);
+
+  useEffect(() => setFilter(tasksSettings.defaultFilter), [tasksSettings.defaultFilter]);
 
   // Adding subtask state
   const [addingSubtaskTo, setAddingSubtaskTo] = useState<string | null>(null);
@@ -71,8 +78,8 @@ export default function TasksPage() {
 
   useEffect(() => {
     // Authentication is external state; initialize the remote task list once available.
-    if (session?.accessToken) initList();
-  }, [session?.accessToken, initList]);
+    if (sessionStatus === "authenticated" && session?.googleAuthStatus === "ready") initList();
+  }, [sessionStatus, session?.googleAuthStatus, initList]);
 
   useEffect(() => {
     dispatch({
@@ -184,7 +191,7 @@ export default function TasksPage() {
     }
     setExpandingId(task.id);
     try {
-      const emailContext = getTaskEmailContext(task.id);
+      const emailContext = getTaskEmailContext(session?.accountKey ?? "anonymous", task.id);
       const contextLines = [`Title: ${task.title}`];
       if (task.notes) contextLines.push(`Description: ${task.notes}`);
       if (emailContext)
@@ -263,6 +270,16 @@ export default function TasksPage() {
     ),
   ];
 
+  const compareTasks = (a: GoogleTask, b: GoogleTask) => {
+    if (tasksSettings.sortBy === "dueDate") {
+      return (a.due ?? "9999").localeCompare(b.due ?? "9999") || (a.position ?? "").localeCompare(b.position ?? "");
+    }
+    if (tasksSettings.sortBy === "updatedAt") {
+      return (b.updated ?? "").localeCompare(a.updated ?? "") || (a.position ?? "").localeCompare(b.position ?? "");
+    }
+    return (a.position ?? "").localeCompare(b.position ?? "");
+  };
+
   const childrenMap = new Map<string, GoogleTask[]>();
   const topLevel: GoogleTask[] = [];
   for (const t of filtered) {
@@ -274,10 +291,12 @@ export default function TasksPage() {
       topLevel.push(t);
     }
   }
+  topLevel.sort(compareTasks);
+  for (const children of childrenMap.values()) children.sort(compareTasks);
 
-  if (!session?.accessToken || initError) {
+  if (sessionStatus !== "authenticated" || session?.googleAuthStatus !== "ready" || initError) {
     const isUnauthorized =
-      !session?.accessToken ||
+      sessionStatus !== "authenticated" || session?.googleAuthStatus !== "ready" ||
       initError?.toLowerCase().includes("unauthorized");
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-6 bg-bg p-12">
@@ -829,14 +848,19 @@ export default function TasksPage() {
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => setConfirmDeleteId(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-task-title"
         >
           <div
+            ref={deleteDialogRef}
+            tabIndex={-1}
             className="bg-surface border border-border-2 rounded-xl w-full max-w-sm shadow-2xl flex flex-col gap-4"
             style={{ padding: "20px" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-col gap-1">
-              <h3 className="text-sm font-semibold text-text">Delete task?</h3>
+              <h3 id="delete-task-title" className="text-sm font-semibold text-text">Delete task?</h3>
               <p className="text-sm text-text-2 leading-relaxed">
                 This task will be permanently removed from Google Tasks.
               </p>

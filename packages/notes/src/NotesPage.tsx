@@ -26,7 +26,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useSession } from "next-auth/react";
 import { useApp } from "@crewmate/state";
-import { aiChat } from "@crewmate/lib";
+import { aiChat, useDialogFocus } from "@crewmate/lib";
 import type { NotePrefill } from "@crewmate/types";
 import { useNotes, docToAppNotes } from "./useNotes";
 import { DEFAULT_NOTES_SETTINGS, type NotesPluginSettings } from "./settings";
@@ -79,7 +79,7 @@ function makeTaskCheckboxInteractive(
 
 export default function NotesPage() {
   const { state, dispatch, notify } = useApp();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const notes = useNotes();
   const {
     docId,
@@ -89,11 +89,13 @@ export default function NotesPage() {
     saving,
     initError,
     dirty,
+    conflict,
     initDoc,
     refreshDoc,
     saveDoc,
     appendContent,
     updateContent,
+    resolveConflict,
   } = notes;
 
   const [summarizing, setSummarizing] = useState(false);
@@ -102,6 +104,7 @@ export default function NotesPage() {
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const lastContentRef = useRef<string | null>(null);
   const [canUndoFormat, setCanUndoFormat] = useState(false);
+  const conflictDialogRef = useDialogFocus(conflict);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const notesSettings =
@@ -122,8 +125,8 @@ export default function NotesPage() {
 
   useEffect(() => {
     // Authentication is external state; initialize the remote document once available.
-    if (session?.accessToken) initDoc();
-  }, [session?.accessToken, initDoc]);
+    if (sessionStatus === "authenticated" && session?.googleAuthStatus === "ready") initDoc();
+  }, [sessionStatus, session?.googleAuthStatus, initDoc]);
 
   useEffect(() => {
     dispatch({
@@ -259,9 +262,9 @@ export default function NotesPage() {
     },
   };
 
-  if (!session?.accessToken || initError) {
+  if (sessionStatus !== "authenticated" || session?.googleAuthStatus !== "ready" || initError) {
     const isUnauthorized =
-      !session?.accessToken ||
+      sessionStatus !== "authenticated" || session?.googleAuthStatus !== "ready" ||
       initError?.toLowerCase().includes("unauthorized");
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-6 bg-bg p-12">
@@ -315,6 +318,31 @@ export default function NotesPage() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-bg">
+      {conflict && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="notes-conflict-title"
+        >
+          <div ref={conflictDialogRef} tabIndex={-1} className="w-full max-w-md rounded-xl border border-border-2 bg-surface p-5 shadow-2xl">
+            <h2 id="notes-conflict-title" className="text-sm font-semibold text-text">
+              This note changed in Google Docs
+            </h2>
+            <p className="mt-2 text-sm text-text-2">
+              Crewmate kept your local draft and did not overwrite the newer remote version.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button className="rounded-lg border border-border-2 px-3 py-2 text-sm text-text-2" onClick={() => void resolveConflict(false)}>
+                Reload remote
+              </button>
+              <button className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white" onClick={() => void resolveConflict(true)}>
+                Copy local draft, then reload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-6 py-3 border-b border-border bg-bg flex-shrink-0">
         <div className="flex items-center gap-2 flex-1 min-w-0">

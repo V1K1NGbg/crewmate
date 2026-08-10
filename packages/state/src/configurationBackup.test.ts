@@ -4,20 +4,18 @@ import {
   mergeAppConfiguration,
   mergeBackedUpPages,
   normalizeComponentSpacing,
+  normalizeFeaturePages,
 } from "./configurationBackup.ts";
 
 const current = {
   pages: [
     { id: "notes", type: "notes", label: "Notes", keybinding: "1" },
-    {
-      id: "custom-1",
-      type: "custom",
-      label: "Dashboard",
-      keybinding: "2",
-      url: "https://example.com",
-    },
   ],
   activePage: "notes",
+  installedFeatures: [
+    { id: "notes", packageName: "@crewmate/notes", installed: true },
+    { id: "mail", packageName: "@crewmate/mail", installed: true },
+  ],
   pageSettings: {
     general: {
       autoRefreshInterval: 30,
@@ -78,34 +76,42 @@ test("ignores malformed component spacing from a backup", () => {
   assert.equal(merged.pageSettings.general.componentSpacing, "comfortable");
 });
 
-test("restores custom pages and falls back to a valid active page", () => {
+test("restores only installed feature pages and falls back to a valid active page", () => {
   const pages = [
     {
-      id: "custom-2",
-      type: "custom",
-      label: "Portal",
+      id: "unknown",
+      type: "unknown",
+      label: "Unknown",
       keybinding: "1",
-      url: "https://example.org",
     },
+    { id: "mail", type: "mail", label: "Mail", keybinding: "2" },
   ];
   const merged = mergeAppConfiguration(current, {
     pages,
     activePage: "missing-page",
   });
 
-  assert.deepEqual(merged.pages, pages);
-  assert.equal(merged.activePage, "custom-2");
+  assert.deepEqual(merged.pages, [
+    { id: "mail", type: "mail", label: "Mail", keybinding: "1" },
+  ]);
+  assert.equal(merged.activePage, "mail");
 });
 
-test("keeps a custom page added locally while a stale Notes backup loads", () => {
-  const saved = [current.pages[0]];
+test("normalizes persisted pages and rejects unavailable or duplicate features", () => {
   assert.deepEqual(
-    mergeBackedUpPages(current.pages, saved, "custom-1").map(({ id }) => id),
-    ["notes", "custom-1"],
+    normalizeFeaturePages(
+      [
+        current.pages[0],
+        { id: "other-notes", type: "notes", label: "Other notes" },
+        { id: "unknown", type: "unknown", label: "Unknown" },
+        null,
+      ],
+      ["notes", "mail"],
+    ),
+    current.pages,
   );
-  const restored = mergeAppConfiguration(
-    { ...current, activePage: "custom-1" },
-    { pages: saved, activePage: "notes" },
+  assert.deepEqual(
+    mergeBackedUpPages(current.pages, [], current.installedFeatures),
+    [],
   );
-  assert.equal(restored.activePage, "custom-1");
 });

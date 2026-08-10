@@ -38,7 +38,7 @@ import {
 } from "date-fns";
 import { useApp } from "@crewmate/state";
 import { useSession } from "next-auth/react";
-import { useResizable } from "@crewmate/lib";
+import { useDialogFocus, useResizable } from "@crewmate/lib";
 import type { CalendarEventDateTime, CalendarPrefill, MailReviewOrigin, Task, Note } from "@crewmate/types";
 import { useCalendar, type CalendarEvent } from "./useCalendar";
 import {
@@ -48,6 +48,9 @@ import {
 } from "./settings";
 import {
   buildGoogleEventTimes,
+  instantToWallClock,
+  instantToZonedDate,
+  isValidTimeZone,
   toInsertEventDateTime,
 } from "./googleCalendarEventTime";
 import {
@@ -103,13 +106,6 @@ function eventBg(color: string, kind: "allDay" | "timed" = "allDay") {
   return color + (kind === "timed" ? "38" : "28");
 }
 
-function eventStart(event: CalendarEvent): Date {
-  return parseISO(event.start.dateTime ?? event.start.date ?? "");
-}
-function eventEnd(event: CalendarEvent): Date {
-  return parseISO(event.end.dateTime ?? event.end.date ?? "");
-}
-
 function parseDateHint(hint: string | undefined): string {
   if (!hint) return format(new Date(), "yyyy-MM-dd");
   try {
@@ -136,6 +132,20 @@ export default function CalendarPage() {
     (state.pageSettings.features.calendar as
       | CalendarPluginSettings
       | undefined) ?? DEFAULT_CALENDAR_SETTINGS;
+  const displayTimeZone = isValidTimeZone(calendarSettings.timezone)
+    ? calendarSettings.timezone
+    : Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  function eventStart(event: CalendarEvent): Date {
+    return event.start.dateTime
+      ? instantToZonedDate(event.start.dateTime, displayTimeZone)
+      : parseISO(event.start.date ?? "");
+  }
+  function eventEnd(event: CalendarEvent): Date {
+    return event.end.dateTime
+      ? instantToZonedDate(event.end.dateTime, displayTimeZone)
+      : parseISO(event.end.date ?? "");
+  }
 
   // Other features' data, read generically — only present if those pages are
   // installed/enabled and have populated their `featureData` slot.
@@ -154,6 +164,8 @@ export default function CalendarPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createDate, setCreateDate] = useState("");
   const [editOpen, setEditOpen] = useState(false);
+  const createDialogRef = useDialogFocus(createOpen);
+  const editDialogRef = useDialogFocus(editOpen);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [importPanelOpen, setImportPanelOpen] = useState(false);
 
@@ -421,6 +433,11 @@ export default function CalendarPage() {
     const tz =
       calendarSettings.timezone ||
       Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!isValidTimeZone(tz)) {
+      setFormErrors({ start: "Choose a valid IANA timezone in Settings" });
+      setSaving(false);
+      return;
+    }
     // Append email context to description if present and description is empty
     const emailCtx = prefillEmailContextRef.current;
     const finalDesc = formDesc
@@ -464,9 +481,17 @@ export default function CalendarPage() {
     }
   }
 
-  async function handleDelete(id: string) {
-    await cal.deleteEvent(id);
+  async function handleDelete(event: CalendarEvent) {
+    if (!event.calendarId) return;
+    if (!window.confirm(`Delete “${event.summary || "Untitled event"}”?`)) return;
+    await cal.deleteEvent(event.id, event.calendarId);
     setSelectedEvent(null);
+  }
+
+  function isCalendarWritable(calendarId?: string): boolean {
+    if (!calendarId) return false;
+    const calendar = calendarList.find((candidate) => candidate.id === calendarId);
+    return calendar?.writable ?? calendarId === "primary";
   }
 
   function openEdit(ev: CalendarEvent) {
@@ -483,14 +508,12 @@ export default function CalendarPage() {
     setFormErrors({});
     if (ev.start.dateTime) {
       setFormAllDay(false);
-      setFormStart(format(parseISO(ev.start.dateTime), "yyyy-MM-dd'T'HH:mm"));
+      const tz = calendarSettings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      setFormStart(instantToWallClock(ev.start.dateTime, tz));
       setFormEnd(
-        format(
-          parseISO(ev.end.dateTime ?? ev.start.dateTime),
-          "yyyy-MM-dd'T'HH:mm",
-        ),
+        instantToWallClock(ev.end.dateTime ?? ev.start.dateTime, tz),
       );
-      setCreateDate(format(parseISO(ev.start.dateTime), "yyyy-MM-dd"));
+      setCreateDate(instantToWallClock(ev.start.dateTime, tz).slice(0, 10));
       setFormEndDate("");
     } else {
       setFormAllDay(true);
@@ -532,6 +555,11 @@ export default function CalendarPage() {
     const tz =
       calendarSettings.timezone ||
       Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!isValidTimeZone(tz)) {
+      setFormErrors({ start: "Choose a valid IANA timezone in Settings" });
+      setSaving(false);
+      return;
+    }
     const { start, end } = buildGoogleEventTimes({
       allDay: formAllDay,
       startDate: createDate,
@@ -606,14 +634,22 @@ export default function CalendarPage() {
 
   const weekStart = startOfWeek(cursor, { weekStartsOn });
   const weekEnd = endOfWeek(cursor, { weekStartsOn });
-  const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
-  const hours = Array.from({ length: 24 }, (_, i) => i);
+  const fullWeekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
+  const weekDays = calendarSettings.showWeekends
+    ? fullWeekDays
+    : fullWeekDays.filter((day) => day.getDay() !== 0 && day.getDay() !== 6);
+  const startHour = Math.max(0, Math.min(23, calendarSettings.startHour ?? 8));
+  const endHour = Math.max(startHour + 1, Math.min(24, calendarSettings.endHour ?? 20));
+  const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i);
 
   // Day labels in correct order based on weekStartsOn
   const dayLabels =
     weekStartsOn === 1
       ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
       : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const visibleDayLabels = calendarSettings.showWeekends
+    ? dayLabels
+    : dayLabels.filter((day) => day !== "Sat" && day !== "Sun");
 
   function eventsOnDay(day: Date): CalendarEvent[] {
     const dayStart = startOfDay(day);
@@ -643,8 +679,9 @@ export default function CalendarPage() {
   }
 
   // Current time position in the week grid (pixels, 56px per hour)
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  const nowTop = (nowMinutes / 60) * 56;
+  const displayNow = instantToZonedDate(now, displayTimeZone);
+  const nowMinutes = displayNow.getHours() * 60 + displayNow.getMinutes();
+  const nowTop = ((nowMinutes - startHour * 60) / 60) * 56;
 
   // Compute overlap layout for a set of timed events on a single day.
   // Returns a map from event id → { col, totalCols }.
@@ -783,7 +820,8 @@ export default function CalendarPage() {
 
   if (
     sessionStatus === "unauthenticated" ||
-    (sessionStatus !== "loading" && !session?.accessToken) ||
+    (sessionStatus !== "loading" &&
+      (sessionStatus !== "authenticated" || session?.googleAuthStatus !== "ready")) ||
     cal.authError
   ) {
     return (
@@ -907,8 +945,8 @@ export default function CalendarPage() {
         <div className="flex-1 flex flex-col overflow-hidden">
           {view === "month" ? (
             <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="grid grid-cols-7 border-b border-border">
-                {dayLabels.map((d) => (
+              <div className="grid border-b border-border" style={{ gridTemplateColumns: `repeat(${visibleDayLabels.length}, 1fr)` }}>
+                {visibleDayLabels.map((d) => (
                   <div
                     key={d}
                     className="py-2 text-center text-xs text-text-3 font-semibold uppercase tracking-widest"
@@ -919,7 +957,10 @@ export default function CalendarPage() {
               </div>
               <div className="flex-1 flex flex-col overflow-y-auto">
                 {Array.from({ length: days.length / 7 }, (_, wi) => {
-                  const weekRow = days.slice(wi * 7, wi * 7 + 7);
+                  const fullWeekRow = days.slice(wi * 7, wi * 7 + 7);
+                  const weekRow = calendarSettings.showWeekends
+                    ? fullWeekRow
+                    : fullWeekRow.filter((day) => day.getDay() !== 0 && day.getDay() !== 6);
                   const allDayInRow = cal.events.filter(
                     (e) =>
                       !e.start.dateTime &&
@@ -989,11 +1030,11 @@ export default function CalendarPage() {
                   return (
                     <div
                       key={`week-${wi}`}
-                      className="relative grid grid-cols-7 border-b border-border/50 flex-1"
-                      style={{ minHeight: weekMinHeight }}
+                      className="relative grid border-b border-border/50 flex-1"
+                      style={{ minHeight: weekMinHeight, gridTemplateColumns: `repeat(${weekRow.length}, 1fr)` }}
                     >
                       {/* Day column guide lines — always visible */}
-                      <div className="absolute inset-0 grid grid-cols-7 pointer-events-none">
+                      <div className="absolute inset-0 grid pointer-events-none" style={{ gridTemplateColumns: `repeat(${weekRow.length}, 1fr)` }}>
                         {weekRow.map((day) => (
                           <div
                             key={`col-${day.toISOString()}`}
@@ -1070,7 +1111,7 @@ export default function CalendarPage() {
                             className="absolute pointer-events-none"
                             style={{
                               top: 6,
-                              left: `calc(${(ci / 7) * 100}% + 6px)`,
+                              left: `calc(${(ci / weekRow.length) * 100}% + 6px)`,
                             }}
                           >
                             <div
@@ -1084,7 +1125,7 @@ export default function CalendarPage() {
                       {/* All-day spanning pills */}
                       {spanLayout.map(({ ev, startCol, endCol, row }) => {
                         const color = eventColor(ev);
-                        const colW = 100 / 7;
+                        const colW = 100 / weekRow.length;
                         const startsInView =
                           startOfDay(eventStart(ev)) >= startOfDay(weekRow[0]);
                         const endsInView =
@@ -1179,7 +1220,7 @@ export default function CalendarPage() {
               <div
                 className="grid border-b border-border"
                 style={{
-                  gridTemplateColumns: "60px repeat(7, 1fr)",
+                  gridTemplateColumns: `60px repeat(${weekDays.length}, 1fr)`,
                 }}
               >
                 <div />
@@ -1260,7 +1301,7 @@ export default function CalendarPage() {
                       {/* Column border lines */}
                       <div
                         className="absolute inset-0 grid pointer-events-none"
-                        style={{ gridTemplateColumns: "repeat(7, 1fr)" }}
+                        style={{ gridTemplateColumns: `repeat(${weekDays.length}, 1fr)` }}
                       >
                         {weekDays.map((d) => (
                           <div
@@ -1272,9 +1313,9 @@ export default function CalendarPage() {
                       {/* Spanning event pills */}
                       {layout.map(({ ev, startCol, endCol, row }) => {
                         const color = eventColor(ev);
-                        const colW = 100 / 7;
+                        const colW = 100 / weekDays.length;
                         const left = `calc(${startCol * colW}% + 2px)`;
-                        const right = `calc(${(7 - endCol) * colW}% + 2px)`;
+                        const right = `calc(${(weekDays.length - endCol) * colW}% + 2px)`;
                         const top = PAD + row * ROW_H;
                         const startsInView =
                           startOfDay(eventStart(ev)) >= startOfDay(weekDays[0]);
@@ -1327,7 +1368,7 @@ export default function CalendarPage() {
                 <div
                   className="grid"
                   style={{
-                    gridTemplateColumns: "60px repeat(7, 1fr)",
+                    gridTemplateColumns: `60px repeat(${weekDays.length}, 1fr)`,
                   }}
                 >
                   <div className="flex flex-col">
@@ -1345,7 +1386,12 @@ export default function CalendarPage() {
                   </div>
                   {weekDays.map((day) => {
                     const dayEvents = eventsOnDay(day).filter(
-                      (e) => e.start.dateTime && !isMultiDay(e),
+                      (e) => {
+                        if (!e.start.dateTime || isMultiDay(e)) return false;
+                        const start = eventStart(e);
+                        const end = eventEnd(e);
+                        return end.getHours() >= startHour && start.getHours() < endHour;
+                      },
                     );
                     const overlapLayout = computeOverlapLayout(dayEvents);
                     const todayCol = isToday(day);
@@ -1366,7 +1412,7 @@ export default function CalendarPage() {
                           />
                         ))}
                         {/* Current time indicator */}
-                        {todayCol && (
+                        {todayCol && nowMinutes >= startHour * 60 && nowMinutes < endHour * 60 && (
                           <div
                             className="absolute left-0 right-0 z-10 pointer-events-none"
                             style={{ top: nowTop }}
@@ -1396,7 +1442,7 @@ export default function CalendarPage() {
                             30,
                             (end.getTime() - start.getTime()) / 60000,
                           );
-                          const top = (startMinutes / 60) * 56;
+                          const top = ((startMinutes - startHour * 60) / 60) * 56;
                           const height = (durationMinutes / 60) * 56;
                           const color = eventColor(ev);
                           const layout = overlapLayout.get(ev.id) ?? {
@@ -1624,13 +1670,15 @@ export default function CalendarPage() {
           <div className="px-5 pb-5 flex flex-col gap-2">
             <button
               onClick={() => openEdit(selectedEvent)}
+              disabled={!isCalendarWritable(selectedEvent.calendarId)}
               style={{ padding: "2px 12px" }}
               className="w-full text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:bg-surface-2 hover:text-text transition-all"
             >
               Edit event
             </button>
             <button
-              onClick={() => handleDelete(selectedEvent.id)}
+              onClick={() => handleDelete(selectedEvent)}
+              disabled={!isCalendarWritable(selectedEvent.calendarId)}
               style={{ padding: "2px 12px" }}
               className="w-full text-sm font-medium text-danger border border-danger/25 rounded-lg hover:bg-danger/8 hover:border-danger/50 transition-all"
             >
@@ -1647,6 +1695,11 @@ export default function CalendarPage() {
           onClick={closeCreateForm}
         >
           <div
+            ref={createDialogRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Create calendar event"
             className="bg-surface border border-border-2 rounded-xl w-full max-w-[500px] shadow-2xl overflow-hidden"
             style={{
               animation: "slideUpLocal 0.18s ease-out both",
@@ -1844,7 +1897,7 @@ export default function CalendarPage() {
                       onChange={(e) => setFormCalendarId(e.target.value)}
                       className="w-full appearance-none bg-bg border border-border-2 rounded-lg px-3 py-2.5 text-sm text-text outline-none focus:border-accent transition-colors pr-8 cursor-pointer"
                     >
-                      {calendarList.map((c) => (
+                      {calendarList.filter((c) => c.writable).map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.summary}
                         </option>
@@ -1896,6 +1949,11 @@ export default function CalendarPage() {
           }}
         >
           <div
+            ref={editDialogRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Edit calendar event"
             className="bg-surface border border-border-2 rounded-xl w-full max-w-[500px] shadow-2xl overflow-hidden"
             style={{ animation: "slideUpLocal 0.18s ease-out both" }}
             onClick={(e) => e.stopPropagation()}

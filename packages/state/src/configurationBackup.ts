@@ -4,6 +4,7 @@ import type {
   Page,
   PageSettings,
   EncryptedEnvironmentFile,
+  FeaturePackageInfo,
 } from "@crewmate/types";
 
 export const DEFAULT_COMPONENT_SPACING: ComponentSpacing = "compact";
@@ -34,6 +35,7 @@ export interface AppConfigurationBackup {
 export interface AppConfigurationState {
   pages: Page[];
   activePage: string;
+  installedFeatures: FeaturePackageInfo[];
   pageSettings: PageSettings;
   panelWidths: Record<string, number>;
   aiServerUrl: string;
@@ -62,26 +64,45 @@ function mergeFeatureSettings(
   return merged;
 }
 
+export function normalizeFeaturePages(
+  value: unknown,
+  availableFeatureIds: Iterable<string>,
+): Page[] {
+  if (!Array.isArray(value)) return [];
+  const available = new Set(availableFeatureIds);
+  const seenTypes = new Set<string>();
+  const pages: Page[] = [];
+
+  for (const candidate of value) {
+    if (!isRecord(candidate)) continue;
+    const { id, type, label } = candidate;
+    if (
+      typeof id !== "string" ||
+      typeof type !== "string" ||
+      typeof label !== "string" ||
+      !available.has(type) ||
+      seenTypes.has(type)
+    ) {
+      continue;
+    }
+    seenTypes.add(type);
+    pages.push({ id, type, label, keybinding: String(pages.length + 1) });
+  }
+
+  return pages;
+}
+
 export function mergeBackedUpPages(
   current: Page[],
   saved: Page[] | undefined,
-  currentActivePage?: string,
+  installedFeatures: FeaturePackageInfo[],
 ): Page[] {
   if (!saved) return current;
-  const currentCustom = current.filter((page) => page.type === "custom");
-  const currentCustomById = new Map(
-    currentCustom.map((page) => [page.id, page]),
-  );
-  const savedNonCustom = saved.filter((page) => page.type !== "custom");
-  const savedCustom = saved
-    .filter((page) => page.type === "custom")
-    .map((page) => currentCustomById.get(page.id) ?? page);
-  const savedIds = new Set(savedCustom.map((page) => page.id));
-  const locallyAdded = currentCustom.filter(
-    (page) => !savedIds.has(page.id) && page.id === currentActivePage,
-  );
-  return [...savedNonCustom, ...savedCustom, ...locallyAdded].map(
-    (page, index) => ({ ...page, keybinding: String(index + 1) }),
+  return normalizeFeaturePages(
+    saved,
+    installedFeatures
+      .filter((feature) => feature.installed)
+      .map((feature) => feature.id),
   );
 }
 
@@ -92,7 +113,7 @@ export function mergeAppConfiguration(
   const pages = mergeBackedUpPages(
     current.pages,
     saved.pages,
-    current.activePage,
+    current.installedFeatures,
   );
   const currentActiveWasNotBackedUp =
     pages.some((page) => page.id === current.activePage) &&
@@ -110,6 +131,7 @@ export function mergeAppConfiguration(
   return {
     pages,
     activePage,
+    installedFeatures: current.installedFeatures,
     pageSettings: {
       general: {
         ...current.pageSettings.general,

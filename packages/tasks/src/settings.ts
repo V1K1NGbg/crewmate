@@ -1,9 +1,9 @@
 export interface TasksPluginSettings {
-  defaultFilter: "all" | "pending" | "in-progress" | "done";
-  sortBy: "priority" | "dueDate" | "createdAt";
+  defaultFilter: "all" | "needsAction" | "completed";
+  sortBy: "position" | "dueDate" | "updatedAt";
 }
 
 export const DEFAULT_TASKS_SETTINGS: TasksPluginSettings = {
   defaultFilter: "all",
-  sortBy: "priority",
+  sortBy: "position",
 };

@@ -16,6 +16,7 @@ export interface GoogleTask {
   due?: string;
   updated?: string;
   parent?: string;
+  position?: string;
 }
 
 export function googleTasksToAppTasks(items: GoogleTask[]): Task[] {
@@ -49,7 +50,7 @@ export function googleTasksToAppTasks(items: GoogleTask[]): Task[] {
   }));
 }
 
-export function useTasks() {
+export function useTasks(accountKey = "anonymous") {
   const { notify } = useApp();
   const [listId, setListId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<GoogleTask[]>([]);
@@ -135,7 +136,7 @@ export function useTasks() {
         const { task } = await res.json();
         setTasks((prev) => [task, ...prev]);
         if (task.id && emailContext)
-          saveTaskEmailContext(task.id, emailContext);
+          saveTaskEmailContext(accountKey, task.id, emailContext);
         notify("Task created", "success");
         return task.id ?? null;
       } catch (err: unknown) {
@@ -143,7 +144,7 @@ export function useTasks() {
         return null;
       }
     },
-    [notify],
+    [accountKey, notify],
   );
 
   const createSubtask = useCallback(
@@ -280,7 +281,7 @@ export function useTasks() {
           { method: "DELETE" },
         );
         if (!res.ok) throw new Error("Failed to delete task");
-        deleteTaskEmailContext(taskId);
+        deleteTaskEmailContext(accountKey, taskId);
         setTasks((prev) =>
           prev.filter((t) => t.id !== taskId && t.parent !== taskId),
         );
@@ -289,7 +290,7 @@ export function useTasks() {
         notify(err instanceof Error ? err.message : "Delete failed", "error");
       }
     },
-    [notify],
+    [accountKey, notify],
   );
 
   const updateTask = useCallback(

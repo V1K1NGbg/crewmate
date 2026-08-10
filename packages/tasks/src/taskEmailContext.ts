@@ -1,24 +1,28 @@
 const STORAGE_PREFIX = "crewmate-task-email:";
 
-export function saveTaskEmailContext(taskId: string, email: string): void {
+function key(accountKey: string, taskId: string) {
+  return `${STORAGE_PREFIX}${accountKey}:${taskId}`;
+}
+
+export function saveTaskEmailContext(accountKey: string, taskId: string, email: string): void {
   try {
-    localStorage.setItem(STORAGE_PREFIX + taskId, email);
+    localStorage.setItem(key(accountKey, taskId), email);
   } catch {
     /* quota exceeded — best effort */
   }
 }
 
-export function getTaskEmailContext(taskId: string): string | undefined {
+export function getTaskEmailContext(accountKey: string, taskId: string): string | undefined {
   try {
-    return localStorage.getItem(STORAGE_PREFIX + taskId) ?? undefined;
+    return localStorage.getItem(key(accountKey, taskId)) ?? undefined;
   } catch {
     return undefined;
   }
 }
 
-export function deleteTaskEmailContext(taskId: string): void {
+export function deleteTaskEmailContext(accountKey: string, taskId: string): void {
   try {
-    localStorage.removeItem(STORAGE_PREFIX + taskId);
+    localStorage.removeItem(key(accountKey, taskId));
   } catch {
     /* ignore */
   }

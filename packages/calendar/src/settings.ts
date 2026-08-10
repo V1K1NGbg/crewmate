@@ -4,6 +4,8 @@ export interface GoogleCalendarList {
   backgroundColor?: string;
   foregroundColor?: string;
   primary?: boolean;
+  accessRole?: "freeBusyReader" | "reader" | "writer" | "owner";
+  writable: boolean;
 }
 
 export interface CalendarPluginSettings {

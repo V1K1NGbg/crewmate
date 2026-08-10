@@ -3,11 +3,9 @@ import type { ComponentType } from "react";
 // ─── Page types ───────────────────────────────────────────────────────────────
 
 /**
- * A page's `type` is either the id of an installed feature plugin (see
- * `FeaturePlugin` below) or the reserved `"custom"` kind for user-defined
- * URL-embed tabs. It is a plain string (not a fixed union) so the app can
- * host any number of feature packages without the shared types needing to
- * know their names in advance.
+ * A page's `type` is the id of an installed feature plugin. It is a plain
+ * string so the app can host feature packages without the shared types
+ * needing to know their names in advance.
  */
 export type PageType = string;
 
@@ -15,9 +13,6 @@ export interface Page {
   id: string;
   type: PageType;
   label: string;
-  /** Only meaningful for `type: "custom"` pages — plugin pages use their own icon. */
-  icon?: string;
-  url?: string;
   keybinding: string;
 }
 

@@ -24,6 +24,7 @@ import {
   fetchAIModels,
   normalizeAIServerUrl,
   SettingRow,
+  useDialogFocus,
 } from "@crewmate/lib";
 import { COLOR_SCHEMES } from "@crewmate/types";
 import type {
@@ -61,7 +62,8 @@ function pageForPlugin(plugin: FeaturePlugin): Page {
 }
 
 export default function SettingsPanel({ onClose }: { onClose: () => void }) {
-  const { state, dispatch, notify } = useApp();
+  const { state, dispatch, notify, clearLocalData } = useApp();
+  const dialogRef = useDialogFocus();
   const [activeSection, setActiveSection] = useState<string>("general");
   const [checkingFeatures, setCheckingFeatures] = useState(false);
 
@@ -185,6 +187,13 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
       notify("Enter a valid AI server URL", "error");
       return;
     }
+    const endpoint = new URL(normalizedUrl);
+    const local = endpoint.hostname === "localhost" || endpoint.hostname === "127.0.0.1" || endpoint.hostname === "[::1]";
+    if ((!local || endpoint.protocol !== "http:") && endpoint.protocol !== "https:") {
+      notify("Remote AI endpoints must use HTTPS", "error");
+      return;
+    }
+    if (!local && !window.confirm("This AI endpoint can receive email, calendar, notes, tasks, and conversation context. Save it anyway?")) return;
     setUrlDraft(normalizedUrl);
     dispatch({ type: "SET_AI_SERVER_URL", url: normalizedUrl });
     dispatch({ type: "SET_ASSISTANT_MODEL", model: modelDraft });
@@ -196,8 +205,13 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Settings"
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="flex flex-col bg-surface border border-border-2 rounded-2xl shadow-2xl overflow-hidden"
         style={{
           width: "90%",
@@ -216,6 +230,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           </div>
           <button
             onClick={onClose}
+            aria-label="Close settings"
             className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-text hover:bg-surface-2 rounded-lg transition-colors"
             title="Close"
           >
@@ -361,8 +376,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                         );
                       })}
                     </div>
-                    {state.pages.filter((p) => p.type !== "custom").length ===
-                      0 && (
+                    {state.pages.length === 0 && (
                       <p className="text-xs text-warning bg-warning/10 rounded-lg px-3 py-2.5">
                         All built-in pages are disabled — enable at least one
                         above to use Crewmate.
@@ -476,6 +490,31 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                       </select>
                     </SettingRow>
                     <SettingRow
+                      label="Local data"
+                      description="Preferences and assistant history are retained only for this signed-in account on this device."
+                    >
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="rounded-lg border border-danger/40 px-3 py-2 text-sm text-danger hover:bg-danger/10"
+                          onClick={() => {
+                            if (window.confirm("Clear local Crewmate data for this account?")) clearLocalData(false);
+                          }}
+                        >
+                          Clear this account
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg border border-danger/40 px-3 py-2 text-sm text-danger hover:bg-danger/10"
+                          onClick={() => {
+                            if (window.confirm("Clear local Crewmate data for every account on this device?")) clearLocalData(true);
+                          }}
+                        >
+                          Clear all accounts
+                        </button>
+                      </div>
+                    </SettingRow>
+                    <SettingRow
                       label="Sensitive environment file"
                       description="Encrypted with your password and 4 digit PIN; only ciphertext is backed up below the visible Notes content."
                     >
@@ -584,7 +623,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                   <>
                     <SettingRow
                       label="API base URL"
-                      description="OpenAI-compatible API, including its /v1 path"
+                      description="OpenAI-compatible API including /v1. Enabled feature context may be sent to this endpoint; remote endpoints should be trusted and use HTTPS."
                     >
                       <input
                         className="settings-input"

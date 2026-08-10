@@ -32,6 +32,7 @@ export default async function AppPage() {
   return (
     <SessionProvider>
       <AppProvider
+        accountKey={session.accountKey}
         initialInstalledFeatures={installedFeatures}
         initialPages={initialPages}
         initialFeatureSettings={initialFeatureSettings}

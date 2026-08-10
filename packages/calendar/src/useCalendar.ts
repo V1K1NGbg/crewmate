@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useApp } from "@crewmate/state";
 import { normalizeEnabledCalendarIds } from "./calendarSettings";
 import { DEFAULT_CALENDAR_SETTINGS, type CalendarPluginSettings } from "./settings";
@@ -15,6 +15,7 @@ export interface CalendarEvent {
   htmlLink?: string;
   colorId?: string;
   calendarId?: string;
+  attendees?: Array<{ self?: boolean; responseStatus?: string }>;
 }
 
 export function useCalendar() {
@@ -22,6 +23,10 @@ export function useCalendar() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState(false);
+  const fetchControllerRef = useRef<AbortController | null>(null);
+  const fetchVersionRef = useRef(0);
+
+  useEffect(() => () => fetchControllerRef.current?.abort(), []);
 
   const calendarSettings =
     (state.pageSettings.features.calendar as
@@ -30,6 +35,10 @@ export function useCalendar() {
 
   const fetchEvents = useCallback(
     async (timeMin?: string, timeMax?: string) => {
+      fetchControllerRef.current?.abort();
+      const controller = new AbortController();
+      fetchControllerRef.current = controller;
+      const requestVersion = ++fetchVersionRef.current;
       setLoading(true);
       try {
         const params = new URLSearchParams();
@@ -41,21 +50,32 @@ export function useCalendar() {
         );
         params.set("calendarIds", enabledIds.join(","));
 
-        const res = await fetch(`/api/calendar/events?${params}`);
+        const res = await fetch(`/api/calendar/events?${params}`, {
+          signal: controller.signal,
+        });
         if (!res.ok) {
           if (res.status === 401) setAuthError(true);
           throw new Error("Failed to fetch events");
         }
         const data = await res.json();
+        if (requestVersion !== fetchVersionRef.current) return;
         setAuthError(false);
-        setEvents(data.events);
-      } catch {
+        const visibleEvents = calendarSettings.showDeclined
+          ? data.events
+          : data.events.filter((event: CalendarEvent) =>
+              !event.attendees?.some((attendee) => attendee.self && attendee.responseStatus === "declined"),
+            );
+        setEvents(visibleEvents);
+        if (data.truncated) notify("Calendar results were limited to 1,000 events per calendar", "info");
+      } catch (error: unknown) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        if (requestVersion !== fetchVersionRef.current) return;
         notify("Failed to load calendar events", "error");
       } finally {
-        setLoading(false);
+        if (requestVersion === fetchVersionRef.current) setLoading(false);
       }
     },
-    [notify, calendarSettings.enabledCalendarIds],
+    [notify, calendarSettings.enabledCalendarIds, calendarSettings.showDeclined],
   );
 
   const createEvent = useCallback(
@@ -126,9 +146,10 @@ export function useCalendar() {
   );
 
   const deleteEvent = useCallback(
-    async (id: string) => {
+    async (id: string, calendarId: string) => {
       try {
-        const res = await fetch(`/api/calendar/events/${id}`, {
+        const params = new URLSearchParams({ calendarId });
+        const res = await fetch(`/api/calendar/events/${encodeURIComponent(id)}?${params}`, {
           method: "DELETE",
         });
         if (!res.ok) {

@@ -27,20 +27,21 @@ import {
 } from "./assistantSessions";
 import {
   mergeAppConfiguration,
+  normalizeFeaturePages,
   normalizeComponentSpacing,
   type AppConfigurationBackup,
 } from "./configurationBackup";
-import { appendCustomPage, updateCustomPage, type CustomPageInput } from "./pages";
 
 export type { AppConfigurationBackup } from "./configurationBackup";
 export { buildAssistantSessionMemory } from "./assistantSessions";
-export { normalizeCustomPageUrl, toEmbeddableCustomPageUrl } from "./pages";
 
 /* ------------------------------------------------------------------ */
 /* State & actions                                                     */
 /* ------------------------------------------------------------------ */
 
-const STORAGE_KEY = "crewmate-state";
+const LEGACY_STORAGE_KEY = "crewmate-state";
+const STORAGE_PREFIX = "crewmate-state:";
+const STORAGE_SCHEMA_VERSION = 2;
 
 export interface AppState {
   pages: Page[];
@@ -71,9 +72,6 @@ export interface AppState {
 
 export type Action =
   | { type: "SET_ACTIVE_PAGE"; id: string }
-  | { type: "ADD_PAGE"; page: CustomPageInput }
-  | { type: "REMOVE_PAGE"; id: string }
-  | { type: "UPDATE_PAGE"; id: string; updates: Pick<Page, "label" | "url"> }
   | { type: "SET_AI_OVERLAY_OPEN"; open: boolean }
   | { type: "SET_AI_SERVER_URL"; url: string }
   | { type: "SET_ASSISTANT_MODEL"; model: string }
@@ -109,10 +107,16 @@ function assignKeybindings(pages: Page[]): Page[] {
   return pages.map((p, i) => ({ ...p, keybinding: String(i + 1) }));
 }
 
-function loadPersisted(): Partial<AppState> {
+function storageKey(accountKey: string) {
+  return `${STORAGE_PREFIX}${accountKey}`;
+}
+
+function loadPersisted(accountKey: string): Partial<AppState> {
   if (typeof localStorage === "undefined") return {};
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
+    const parsed = JSON.parse(localStorage.getItem(storageKey(accountKey)) ?? "{}") as Record<string, unknown>;
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    return parsed && typeof parsed === "object" ? parsed as Partial<AppState> : {};
   } catch {
     return {};
   }
@@ -123,6 +127,34 @@ function migratePageSettings(
   initialFeatureSettings: Record<string, unknown>,
 ): PageSettings {
   const savedGeneral = saved?.general;
+  const features = { ...initialFeatureSettings };
+  for (const [featureId, defaults] of Object.entries(initialFeatureSettings)) {
+    const persisted = saved?.features?.[featureId];
+    if (!persisted || typeof persisted !== "object" || Array.isArray(persisted)) continue;
+    const migrated = { ...(defaults as Record<string, unknown>), ...(persisted as Record<string, unknown>) };
+    if (featureId === "tasks") {
+      const oldFilter = migrated.defaultFilter;
+      migrated.defaultFilter = oldFilter === "done" ? "completed" : oldFilter === "pending" || oldFilter === "in-progress" ? "needsAction" : oldFilter;
+      const oldSort = migrated.sortBy;
+      migrated.sortBy = oldSort === "priority" ? "position" : oldSort === "createdAt" ? "updatedAt" : oldSort;
+    }
+    if (featureId === "mail") {
+      const limit = Number(migrated.maxThreads);
+      migrated.maxThreads = Number.isInteger(limit) && limit >= 1 && limit <= 50 ? limit : 20;
+      if (typeof migrated.defaultQuery !== "string") migrated.defaultQuery = "in:inbox";
+      if (typeof migrated.mainLanguage !== "string" || !migrated.mainLanguage.trim()) migrated.mainLanguage = "English";
+      if (typeof migrated.autoTranslateForeignEmails !== "boolean") migrated.autoTranslateForeignEmails = true;
+    }
+    if (featureId === "calendar") {
+      const start = Number(migrated.startHour);
+      const end = Number(migrated.endHour);
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > 24 || start >= end) {
+        migrated.startHour = 8;
+        migrated.endHour = 20;
+      }
+    }
+    features[featureId] = migrated;
+  }
   return {
     general: {
       autoRefreshInterval: 0,
@@ -133,8 +165,7 @@ function migratePageSettings(
       ),
     },
     features: {
-      ...initialFeatureSettings,
-      ...(saved?.features ?? {}),
+      ...features,
     },
   };
 }
@@ -147,27 +178,6 @@ function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case "SET_ACTIVE_PAGE":
       return { ...state, activePage: action.id };
-
-    case "ADD_PAGE": {
-      const pages = appendCustomPage(state.pages, action.page);
-      return pages === state.pages
-        ? state
-        : { ...state, pages, activePage: action.page.id };
-    }
-    case "UPDATE_PAGE": {
-      const pages = updateCustomPage(state.pages, action.id, action.updates);
-      return pages === state.pages ? state : { ...state, pages };
-    }
-    case "REMOVE_PAGE": {
-      const pages = assignKeybindings(
-        state.pages.filter((p) => p.id !== action.id),
-      );
-      const activePage =
-        state.activePage === action.id
-          ? (pages[0]?.id ?? "")
-          : state.activePage;
-      return { ...state, pages, activePage };
-    }
 
     case "SET_AI_OVERLAY_OPEN":
       return { ...state, aiOverlayOpen: action.open };
@@ -331,6 +341,7 @@ interface AppContextValue {
   state: AppState;
   dispatch: Dispatch<Action>;
   notify: (message: string, type?: AppNotification["type"]) => void;
+  clearLocalData: (allAccounts?: boolean) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -340,6 +351,7 @@ export function AppProvider({
   initialInstalledFeatures,
   initialPages,
   initialFeatureSettings,
+  accountKey,
 }: {
   children: ReactNode;
   /**
@@ -354,8 +366,10 @@ export function AppProvider({
   /** Default settings blob per feature plugin id, built by the host app from
    * each plugin's own `defaultSettings`. */
   initialFeatureSettings?: Record<string, unknown>;
+  /** Stable opaque account namespace supplied by the authenticated host. */
+  accountKey: string;
 }) {
-  const saved = typeof window !== "undefined" ? loadPersisted() : {};
+  const saved = typeof window !== "undefined" ? loadPersisted(accountKey) : {};
   const legacySaved = saved as Partial<AppState> & { opencodeUrl?: string };
   const currentAIServerUrl =
     typeof saved.aiServerUrl === "string" ? saved.aiServerUrl : null;
@@ -373,11 +387,25 @@ export function AppProvider({
     saved.assistantSessions,
     saved.activeSessionId,
   );
+  const installedFeatureIds = (initialInstalledFeatures ?? [])
+    .filter((feature) => feature.installed)
+    .map((feature) => feature.id);
+  const availableFeatureIds =
+    installedFeatureIds.length > 0
+      ? installedFeatureIds
+      : (initialPages ?? []).map((page) => page.type);
+  const persistedPages = Array.isArray(saved.pages)
+    ? normalizeFeaturePages(saved.pages, availableFeatureIds)
+    : (initialPages ?? []);
+  const persistedActivePage =
+    typeof saved.activePage === "string" &&
+    persistedPages.some((page) => page.id === saved.activePage)
+      ? saved.activePage
+      : (persistedPages[0]?.id ?? "");
 
   const [state, dispatch] = useReducer(reducer, {
-    pages: (saved.pages as Page[]) ?? initialPages ?? [],
-    activePage:
-      (saved.activePage as string) ?? initialPages?.[0]?.id ?? "",
+    pages: persistedPages,
+    activePage: persistedActivePage,
     aiServerUrl: savedAIServerUrl,
     assistantModel: hasCurrentAISettings
       ? ((saved.assistantModel as string) ?? "")
@@ -427,24 +455,48 @@ export function AppProvider({
     [],
   );
 
+  const clearLocalData = useCallback((allAccounts = false) => {
+    if (allAccounts) {
+      for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+        const key = localStorage.key(index);
+        if (key && (key.startsWith(STORAGE_PREFIX) || key === LEGACY_STORAGE_KEY || key.startsWith("crewmate-task-email:"))) {
+          localStorage.removeItem(key);
+        }
+      }
+    } else {
+      localStorage.removeItem(storageKey(accountKey));
+    }
+    window.location.reload();
+  }, [accountKey]);
+
   // Persist relevant slices to localStorage
   useEffect(() => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
+    try {
+      const assistantSessions = state.assistantSessions.slice(0, 25).map((session) => ({
+        ...session,
+        messages: session.messages.slice(-100),
+      }));
+      localStorage.setItem(
+        storageKey(accountKey),
+        JSON.stringify({
+        schemaVersion: STORAGE_SCHEMA_VERSION,
         pages: state.pages,
         activePage: state.activePage,
         aiServerUrl: state.aiServerUrl,
         assistantModel: state.assistantModel,
         pageSettings: state.pageSettings,
         panelWidths: state.panelWidths,
-        assistantSessions: state.assistantSessions,
+        assistantSessions,
         activeSessionId: state.activeSessionId,
         environmentVault: state.environmentVault,
         environmentPassword: state.environmentPassword,
-      }),
-    );
+        }),
+      );
+    } catch {
+      // Storage quota and privacy-mode failures must not break the app render loop.
+    }
   }, [
+    accountKey,
     state.pages,
     state.activePage,
     state.aiServerUrl,
@@ -468,7 +520,7 @@ export function AppProvider({
   }, [state.notification]);
 
   return (
-    <AppContext.Provider value={{ state, dispatch, notify }}>
+    <AppContext.Provider value={{ state, dispatch, notify, clearLocalData }}>
       {children}
     </AppContext.Provider>
   );

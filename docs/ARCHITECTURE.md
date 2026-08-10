@@ -60,6 +60,9 @@ Mail maintains a bounded, two-worker suggestion queue over a sliding window
 starting at the active thread. Quick-review cross-page actions carry a
 `reviewOrigin` in the one-shot prefill; successful destinations return a
 completion prefill to Mail, which archives and advances the source thread.
+Mail can also use the configured AI endpoint to detect whether an opened message
+differs from the user's primary language and cache a plain-text translation by
+message ID and target language. Original provider content is never replaced.
 
 ## External data flow
 
@@ -76,25 +79,25 @@ for example, is identified by both `event.id` and its source `calendarId`.
 
 The AI path is different: browser code in `@crewmate/lib` talks directly to the
 user-configured OpenAI-compatible endpoint, which defaults to a local server.
+The browser-visible Auth.js session contains only an opaque account key and
+Google authorization status; provider bearer credentials remain server-side.
+Persisted browser state is namespaced with that account key.
 
 The Notes Google Doc ends with a versioned, managed configuration footer below
-the note body. It backs up enabled and custom pages, the active page, general
+the note body. It backs up enabled pages, the active page, general
 and feature settings (including the color scheme), panel widths, and AI endpoint
 preferences. Notes strips this footer from its editor, preview, and shared
 feature data. On load, the state reducer merges backed-up values over current
 configuration so settings introduced after an older backup retain their current
 values.
+Notes writes are serialized and guarded by Google Docs revision IDs. A remote
+revision change becomes an explicit conflict instead of a replacement write.
 
 The same managed footer may contain an encrypted environment-file envelope.
 Encryption and decryption happen in the browser with AES-GCM and a PBKDF2 key
 derived from a generated password plus a four-digit PIN. The password persists
 only in local browser state and is shown in Settings; it is deliberately omitted
 from the Notes backup. The PIN and plaintext are never persisted.
-
-Custom pages use direct iframes. The host rewrites known Google URLs to official
-iframe-compatible modes (such as Google `igu=1` and Docs preview routes). Sites
-can still refuse framing through their own CSP or `X-Frame-Options`; Crewmate
-does not bypass those controls with an unsafe authenticated-content proxy.
 
 ## Source-of-truth map
 

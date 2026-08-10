@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { isAuthError, getDocsClient } from "@crewmate/lib/server";
+import { getDocsClient } from "@crewmate/lib/server";
+import { googleErrorResponse } from "@/lib/google-error-response";
 
 /**
  * GET /api/docs/content?id=<documentId>
@@ -38,13 +39,10 @@ export async function GET(req: Request) {
       documentId: doc.data.documentId,
       title: doc.data.title,
       content: text,
+      revisionId: doc.data.revisionId,
     });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[docs/content GET]", err);
-    if (isAuthError(err))
-      return NextResponse.json({ error: msg || "Unauthorized" }, { status: 401 });
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return googleErrorResponse(err, "docs/content GET");
   }
 }
 
@@ -58,13 +56,14 @@ export async function PUT(req: Request) {
   if (!session?.accessToken)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id, content } = (await req.json()) as {
+  const { id, content, revisionId } = (await req.json()) as {
     id: string;
     content: string;
+    revisionId: string;
   };
-  if (!id)
+  if (!id || typeof content !== "string" || content.length > 2_000_000 || !revisionId)
     return NextResponse.json(
-      { error: "Missing id in body" },
+      { error: "id, content, and revisionId are required" },
       { status: 400 },
     );
 
@@ -101,16 +100,22 @@ export async function PUT(req: Request) {
     if (requests.length > 0) {
       await docs.documents.batchUpdate({
         documentId: id,
-        requestBody: { requests },
+        requestBody: {
+          requests,
+          writeControl: { requiredRevisionId: revisionId },
+        },
       });
     }
-
-    return NextResponse.json({ ok: true });
+    const updated = await docs.documents.get({ documentId: id });
+    return NextResponse.json({ ok: true, revisionId: updated.data.revisionId });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[docs/content PUT]", err);
-    if (isAuthError(err))
-      return NextResponse.json({ error: msg || "Unauthorized" }, { status: 401 });
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (/revision|requiredRevisionId|failed precondition/i.test(msg)) {
+      return NextResponse.json(
+        { error: "The document changed in Google Docs", code: "REVISION_CONFLICT" },
+        { status: 409 },
+      );
+    }
+    return googleErrorResponse(err, "docs/content PUT");
   }
 }

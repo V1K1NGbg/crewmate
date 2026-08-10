@@ -1,38 +1,39 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import { getGmailClient } from "@crewmate/lib/server";
+import { buildRawEmail } from "@crewmate/mail/shared";
+import { googleErrorResponse } from "@/lib/google-error-response";
 
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.accessToken)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { to, subject, body, threadId, inReplyTo } = await req.json();
-  if (!to || !subject || !body) {
+  const payload = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!payload || typeof payload.to !== "string" || typeof payload.subject !== "string" || typeof payload.body !== "string") {
     return NextResponse.json(
       { error: "Missing required fields: to, subject, body" },
       { status: 400 },
     );
   }
+  const { to, subject, body } = payload;
+  const threadId = typeof payload.threadId === "string" ? payload.threadId : undefined;
+  const inReplyTo = typeof payload.inReplyTo === "string" ? payload.inReplyTo : undefined;
 
   const gmail = getGmailClient(session.accessToken);
 
   const profile = await gmail.users.getProfile({ userId: "me" });
   const from = profile.data.emailAddress ?? "";
 
-  const headers = [
-    `From: ${from}`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    `MIME-Version: 1.0`,
-    `Content-Type: text/html; charset=utf-8`,
-    inReplyTo ? `In-Reply-To: ${inReplyTo}` : "",
-    inReplyTo ? `References: ${inReplyTo}` : "",
-  ]
-    .filter(Boolean)
-    .join("\r\n");
-
-  const raw = Buffer.from(`${headers}\r\n\r\n${body}`).toString("base64url");
+  let raw: string;
+  try {
+    raw = buildRawEmail({ from, to, subject, body, inReplyTo });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Invalid email" },
+      { status: 400 },
+    );
+  }
 
   try {
     const res = await gmail.users.messages.send({
@@ -41,7 +42,6 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ id: res.data.id });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Send failed";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return googleErrorResponse(err, "gmail/send POST");
   }
 }

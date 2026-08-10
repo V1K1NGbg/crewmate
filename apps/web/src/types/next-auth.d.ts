@@ -2,8 +2,11 @@ import type { DefaultSession } from "next-auth";
 
 declare module "next-auth" {
   interface Session {
-    accessToken: string;
+    /** Server-only. The public session endpoint strips this field. */
+    accessToken?: string;
     error?: "RefreshAccessTokenError";
+    googleAuthStatus: "ready" | "reauth-required";
+    accountKey: string;
     user: DefaultSession["user"];
   }
 }

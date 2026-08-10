@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SettingRow } from "@crewmate/lib";
+import { SettingRow, SettingToggle } from "@crewmate/lib";
 import type { FeatureSettingsProps } from "@crewmate/types";
 import type { GmailPluginSettings } from "./settings";
 
@@ -18,6 +18,9 @@ export default function GmailSettingsSection({
   settings,
   onChange,
 }: FeatureSettingsProps<GmailPluginSettings>) {
+  const [languageDraft, setLanguageDraft] = useState(
+    settings.mainLanguage ?? "English",
+  );
   return (
     <>
       <SettingRow label="Max threads">
@@ -31,6 +34,43 @@ export default function GmailSettingsSection({
           <option value={50}>50</option>
         </select>
       </SettingRow>
+
+      <SettingRow
+        label="Primary language"
+        description="Foreign-language messages are translated into this language using your configured AI endpoint."
+      >
+        <input
+          className="settings-input"
+          value={languageDraft}
+          maxLength={60}
+          onChange={(event) => setLanguageDraft(event.target.value)}
+          onBlur={(event) => {
+            const value = event.target.value.trim();
+            const next = value || "English";
+            setLanguageDraft(next);
+            onChange({ mainLanguage: next });
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+            if (event.key === "Escape") {
+              setLanguageDraft(settings.mainLanguage ?? "English");
+              event.currentTarget.blur();
+            }
+          }}
+          placeholder="English"
+        />
+      </SettingRow>
+
+      <SettingToggle
+        label="Translate foreign emails"
+        description="Automatically detect and translate opened messages. The original remains available."
+        checked={settings.autoTranslateForeignEmails ?? false}
+        onChange={() =>
+          onChange({
+            autoTranslateForeignEmails: !settings.autoTranslateForeignEmails,
+          })
+        }
+      />
 
       <SettingRow
         label="Precomputed emails"

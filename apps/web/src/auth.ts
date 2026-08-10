@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import { createHmac } from "node:crypto";
 
 async function refreshAccessToken(token: {
   refreshToken?: string;
@@ -81,10 +82,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken as string;
-      if (token.error) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (session as any).error = token.error;
-      }
+      session.error = token.error as "RefreshAccessTokenError" | undefined;
+      session.googleAuthStatus = token.error ? "reauth-required" : "ready";
+      session.accountKey = createHmac(
+        "sha256",
+        process.env.AUTH_SECRET ?? "crewmate-account-key",
+      )
+        .update(token.sub ?? "unknown")
+        .digest("hex");
       return session;
     },
   },

@@ -1,4 +1,5 @@
 import { addDays, format, parseISO } from "date-fns";
+import { formatInTimeZone, fromZonedTime, toZonedTime } from "date-fns-tz";
 
 type EventDateTimeInput = {
   date?: string;
@@ -54,14 +55,51 @@ export function buildGoogleEventTimes(params: {
 
   return {
     start: normalizeGoogleEventDateTime({
-      dateTime: new Date(params.startDateTime).toISOString(),
+      dateTime: wallClockToInstant(params.startDateTime, params.timeZone),
       timeZone: params.timeZone,
     }),
     end: normalizeGoogleEventDateTime({
-      dateTime: new Date(params.endDateTime).toISOString(),
+      dateTime: wallClockToInstant(params.endDateTime, params.timeZone),
       timeZone: params.timeZone,
     }),
   };
+}
+
+export function isValidTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    return value.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+export function wallClockToInstant(value: string, timeZone: string): string {
+  if (!isValidTimeZone(timeZone)) throw new RangeError("Invalid timezone");
+  const instant = fromZonedTime(value, timeZone);
+  if (Number.isNaN(instant.getTime())) throw new RangeError("Invalid datetime");
+  return instant.toISOString();
+}
+
+export function instantToWallClock(value: string, timeZone: string): string {
+  if (!isValidTimeZone(timeZone)) throw new RangeError("Invalid timezone");
+  const instant = parseISO(value);
+  if (Number.isNaN(instant.getTime())) throw new RangeError("Invalid datetime");
+  return formatInTimeZone(instant, timeZone, "yyyy-MM-dd'T'HH:mm");
+}
+
+export function formatInstantInTimeZone(
+  value: string | Date,
+  timeZone: string,
+  pattern: string,
+): string {
+  return formatInTimeZone(value, timeZone, pattern);
+}
+
+/** Date-fns layout helper whose local fields represent an instant in the chosen zone. */
+export function instantToZonedDate(value: string | Date, timeZone: string): Date {
+  if (!isValidTimeZone(timeZone)) throw new RangeError("Invalid timezone");
+  return toZonedTime(value, timeZone);
 }
 
 export function toInsertEventDateTime(

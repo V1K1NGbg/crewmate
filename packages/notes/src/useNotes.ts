@@ -34,10 +34,13 @@ export function useNotes() {
   const [saving, setSaving] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [conflict, setConflict] = useState(false);
   const docIdRef = useRef<string | null>(null);
   const contentRef = useRef(content);
   const dirtyRef = useRef(false);
   const changeVersionRef = useRef(0);
+  const revisionIdRef = useRef<string | null>(null);
+  const savePromiseRef = useRef<Promise<void> | null>(null);
   const configurationRef = useRef<AppConfigurationBackup>({});
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -64,9 +67,12 @@ export function useNotes() {
       if (!contentRes.ok)
         throw new Error(contentData.error ?? "Failed to load document content");
       const parsedDocument = parseNotesDocument(contentData.content ?? "");
+      revisionIdRef.current = contentData.revisionId ?? null;
       contentRef.current = parsedDocument.body;
       setContent(parsedDocument.body);
       setDirty(false);
+      dirtyRef.current = false;
+      setConflict(false);
       if (parsedDocument.backup) {
         dispatch({
           type: "RESTORE_APP_CONFIGURATION",
@@ -90,6 +96,7 @@ export function useNotes() {
       if (!res.ok) return;
       const data = await res.json();
       const parsedDocument = parseNotesDocument(data.content ?? "");
+      revisionIdRef.current = data.revisionId ?? revisionIdRef.current;
       contentRef.current = parsedDocument.body;
       setContent(parsedDocument.body);
     } catch {
@@ -98,31 +105,62 @@ export function useNotes() {
   }, []);
 
   const saveDoc = useCallback(async () => {
-    const id = docIdRef.current;
-    if (!id) return;
-    const versionAtStart = changeVersionRef.current;
-    const documentContent = buildNotesDocument(
-      contentRef.current,
-      configurationRef.current,
-    );
-    setSaving(true);
-    try {
-      const res = await fetch("/api/docs/content", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id,
-          content: documentContent,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to save");
-      if (changeVersionRef.current === versionAtStart) setDirty(false);
-    } catch (err: unknown) {
-      notify(err instanceof Error ? err.message : "Save failed", "error");
-    } finally {
-      setSaving(false);
-    }
-  }, [notify]);
+    if (savePromiseRef.current) return savePromiseRef.current;
+
+    const run = async (): Promise<void> => {
+      const id = docIdRef.current;
+      if (!id || !revisionIdRef.current || conflict) return;
+      setSaving(true);
+      try {
+        while (dirtyRef.current && !conflict) {
+          const versionAtStart = changeVersionRef.current;
+          const documentContent = buildNotesDocument(
+            contentRef.current,
+            configurationRef.current,
+          );
+          const res: Response = await fetch("/api/docs/content", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id,
+              content: documentContent,
+              revisionId: revisionIdRef.current,
+            }),
+          });
+          const data: { error?: string; revisionId?: string } = await res.json().catch(() => ({}));
+          if (res.status === 409) {
+            setConflict(true);
+            notify("The note changed in Google Docs. Resolve the conflict before saving.", "error");
+            return;
+          }
+          if (!res.ok) throw new Error(data.error ?? "Failed to save");
+          revisionIdRef.current = data.revisionId ?? revisionIdRef.current;
+          if (changeVersionRef.current === versionAtStart) {
+            dirtyRef.current = false;
+            setDirty(false);
+          }
+        }
+      } catch (err: unknown) {
+        notify(err instanceof Error ? err.message : "Save failed", "error");
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    const promise = run().finally(() => {
+      if (savePromiseRef.current === promise) savePromiseRef.current = null;
+    });
+    savePromiseRef.current = promise;
+    return promise;
+  }, [conflict, notify]);
+
+  const resolveConflict = useCallback(async (copyLocal: boolean) => {
+    if (copyLocal) await navigator.clipboard.writeText(contentRef.current);
+    setConflict(false);
+    dirtyRef.current = false;
+    setDirty(false);
+    await initDoc();
+  }, [initDoc]);
 
   const notesSettings =
     (state.pageSettings.features.notes as NotesPluginSettings | undefined) ??
@@ -161,6 +199,7 @@ export function useNotes() {
         return next;
       });
       setDirty(true);
+      dirtyRef.current = true;
       scheduleAutoSave();
     },
     [scheduleAutoSave],
@@ -172,6 +211,7 @@ export function useNotes() {
       contentRef.current = value;
       setContent(value);
       setDirty(true);
+      dirtyRef.current = true;
       scheduleAutoSave();
     },
     [scheduleAutoSave],
@@ -181,6 +221,7 @@ export function useNotes() {
     if (loading || !docId) return;
     changeVersionRef.current += 1;
     setDirty(true);
+    dirtyRef.current = true;
     scheduleAutoSave();
   }, [
     docId,
@@ -194,6 +235,15 @@ export function useNotes() {
     state.panelWidths,
   ]);
 
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!dirtyRef.current && !savePromiseRef.current) return;
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
+
   return {
     docId,
     docTitle,
@@ -202,10 +252,12 @@ export function useNotes() {
     saving,
     initError,
     dirty,
+    conflict,
     initDoc,
     refreshDoc,
     saveDoc,
     appendContent,
     updateContent,
+    resolveConflict,
   };
 }

@@ -6,13 +6,12 @@ An AI-powered dashboard that integrates your Email, Calendar, Notes, and Tasks i
 
 ## Features
 
-- **Mail** — Browse Inbox/Archived mail, keep a sliding window of AI actions ready, and optionally review with configurable single-key shortcuts
+- **Mail** — Browse Inbox/Archived mail, translate foreign-language messages into a configured primary language, keep a sliding window of AI actions ready, and optionally review with configurable single-key shortcuts
 - **Calendar** — View and create Calendar events with natural language
 - **Notes** — Personal notes synced to a Google Doc with **inline Markdown preview** — click to edit, press `Esc` to return to preview
 - **Tasks** — Create, organize, and track Google Tasks with collapsible subtasks, AI-powered task breakdown, due dates, and status toggling
 - **AI Assistant** — Centered overlay popup (90% viewport) with blur backdrop and context awareness of emails, events, notes, and tasks
 - **Settings** — Centered modal with sidebar navigation and per-section configuration (General, AI Assistant, Gmail, Calendar, Notes, Tasks)
-- **Custom Pages** — Add/edit URL tabs and keep them inside Crewmate, including iframe-compatible Google URL modes
 - **Encrypted environment vault** — Edit sensitive key/value text in Settings; a generated local password plus PIN encrypts the Notes-backed ciphertext
 - **Keyboard Shortcuts** — `1`–`9` to switch pages, `O` to toggle AI panel, `Esc` to close overlays
 - **Mail review shortcuts** — Optional and configurable; defaults are `J`/`K` to choose, `E` to apply and archive, `X` to skip, and `A` to apply only
@@ -27,7 +26,7 @@ An AI-powered dashboard that integrates your Email, Calendar, Notes, and Tasks i
 |---|---|
 | Framework | Next.js 16 (App Router, Turbopack) |
 | UI | React 19, Tailwind CSS 4, Lucide React, react-markdown |
-| Language | TypeScript 5 |
+| Language | TypeScript 6 |
 | Auth | NextAuth v5 (Google OAuth) |
 | Google APIs | Gmail, Calendar, Docs, Drive, Tasks |
 | AI | OpenAI-compatible API, including local `llama-server` |
@@ -36,10 +35,11 @@ An AI-powered dashboard that integrates your Email, Calendar, Notes, and Tasks i
 
 ## Prerequisites
 
-1. A **Google Cloud project** with OAuth 2.0 credentials configured
-2. The following OAuth scopes enabled on your client:
+1. **Node.js 22.18+** and **npm 10+**
+2. A **Google Cloud project** with OAuth 2.0 credentials configured
+3. The following OAuth scopes enabled on your client:
    - `gmail.modify`, `calendar`, `documents`, `drive.file`, `tasks`
-3. Redirect URI set to `http://localhost:3000/api/auth/callback/google` (for local dev)
+4. Redirect URI set to `http://localhost:3000/api/auth/callback/google` (for local dev)
 
 ---
 
@@ -51,6 +51,7 @@ Copy `apps/web/.env.example` to `apps/web/.env.local` (the Next.js app root):
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 AUTH_SECRET=a-random-secret-string
+NEXTAUTH_URL=http://localhost:3000
 ```
 
 ---
@@ -104,7 +105,6 @@ apps/
             ├── TopBar.tsx          # Header bar
             ├── AIAssistant.tsx     # AI chat overlay (centered popup)
             ├── SettingsPanel.tsx   # Settings modal (centered popup)
-            └── pages/CustomPage.tsx
 
 packages/
 ├── types/       (@crewmate/types)    # Shared TS types used by every package (Page, Note, Task,
@@ -128,6 +128,7 @@ packages/
 | `GET` | `/api/gmail/threads` | List inbox threads (supports `q` query param) |
 | `GET` | `/api/gmail/thread/[id]` | Get full thread with all messages |
 | `PATCH` | `/api/gmail/thread/[id]` | Archive thread |
+| `PUT` | `/api/gmail/thread/[id]` | Toggle thread star |
 | `DELETE` | `/api/gmail/thread/[id]` | Trash thread |
 | `POST` | `/api/gmail/send` | Send/reply to an email |
 | `GET` | `/api/calendar/events` | List calendar events |
@@ -141,6 +142,7 @@ packages/
 | `GET` | `/api/tasks/items` | List tasks in a list |
 | `POST` | `/api/tasks/items` | Create a task |
 | `PATCH` | `/api/tasks/items` | Update a task |
+| `DELETE` | `/api/tasks/items` | Delete a task |
 
 ---
 
@@ -165,12 +167,27 @@ context from all active pages (recent emails, upcoming events, notes content,
 task list) so it can answer questions and take actions on your behalf.
 Conversation history is sent only from the active chat session, and replies
 remain attached to the session that initiated them if the user switches chats.
+Feature context can include email, Calendar, Notes, and Tasks data. Crewmate
+warns before saving a remote AI endpoint; use only an endpoint you trust.
+When Mail translation is enabled, opened message text is also sent to that AI
+endpoint for language detection and translation. The original message remains
+available alongside the translated text.
+
+Browser preferences and assistant history are stored under an opaque,
+account-specific key. They remain on the device after sign-out until cleared in
+Settings. Google access tokens remain in HttpOnly authentication state and are
+removed from the browser-visible session response.
 
 ---
 
 ## Notes
 
-The Notes page connects to a Google Doc with a unified editor/preview pane. Content is displayed as rendered Markdown by default — click the preview or the Edit button to switch to the text editor. Press `Esc` to return to the preview.
+The Notes page connects to a Crewmate-owned Google Doc with a unified
+editor/preview pane. It stores plain-text Markdown and does not preserve rich
+Google Docs structures or formatting. Content is displayed as rendered Markdown
+by default — click the preview or the Edit button to switch to the text editor.
+Press `Esc` to return to the preview. Revision conflicts are shown without
+overwriting either the newer Google Doc or the local draft.
 
 Content appended via AI summarization or cross-page prefills uses structured Markdown (headings, blockquotes with timestamps, horizontal rules).
 Content sent from Mail is grouped under a dedicated `Mail notes` section.
