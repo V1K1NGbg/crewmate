@@ -142,8 +142,11 @@ function migratePageSettings(
       const limit = Number(migrated.maxThreads);
       migrated.maxThreads = Number.isInteger(limit) && limit >= 1 && limit <= 50 ? limit : 20;
       if (typeof migrated.defaultQuery !== "string") migrated.defaultQuery = "in:inbox";
-      if (typeof migrated.mainLanguage !== "string" || !migrated.mainLanguage.trim()) migrated.mainLanguage = "English";
+      const mainLanguage = typeof migrated.mainLanguage === "string" ? migrated.mainLanguage.trim().toLowerCase() : "";
+      const legacyLanguages: Record<string, string> = { english: "en", dutch: "nl", german: "de", french: "fr", spanish: "es", italian: "it", portuguese: "pt" };
+      migrated.mainLanguage = legacyLanguages[mainLanguage] ?? (mainLanguage || "en");
       if (typeof migrated.autoTranslateForeignEmails !== "boolean") migrated.autoTranslateForeignEmails = true;
+      if (typeof migrated.allowAITranslationFallback !== "boolean") migrated.allowAITranslationFallback = false;
     }
     if (featureId === "calendar") {
       const start = Number(migrated.startHour);

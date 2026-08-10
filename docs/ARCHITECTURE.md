@@ -60,9 +60,17 @@ Mail maintains a bounded, two-worker suggestion queue over a sliding window
 starting at the active thread. Quick-review cross-page actions carry a
 `reviewOrigin` in the one-shot prefill; successful destinations return a
 completion prefill to Mail, which archives and advances the source thread.
-Mail can also use the configured AI endpoint to detect whether an opened message
-differs from the user's primary language and cache a plain-text translation by
-message ID and target language. Original provider content is never replaced.
+Mail first uses browser-native, on-device language detection and translation to
+determine whether an opened message differs from the user's primary language.
+With an explicit, disabled-by-default setting, it can fall back to the configured
+AI endpoint when those browser APIs are unavailable. It caches the plain-text
+translation by message ID and target language. The UI swaps the displayed body
+while retaining the original provider content for its Show original toggle.
+
+A package-backed Web Worker design is scaffolded in Mail but deliberately not
+connected to the live flow. Its runtime packages are not installed because the
+evaluated dependency tree introduced unresolved high-severity audit findings.
+See `AGENTS.md` before enabling or changing that scaffold.
 
 ## External data flow
 

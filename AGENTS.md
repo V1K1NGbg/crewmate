@@ -121,6 +121,17 @@ it for package discovery.
 - `IMPROVEMENT_AUDIT.md` is a point-in-time audit, not current truth. Verify each
   claim against the source and current checks before acting on it.
 
+## Disabled local translation scaffold
+
+`packages/mail/src/localTranslationClient.ts` and its worker are a disabled
+scaffold for browser-local package translation. Do not import the client into
+Mail and do not install `@huggingface/transformers` or `eld` without a new
+security review and explicit approval. They are intentionally absent from every
+package manifest because the evaluated Transformers.js dependency tree added
+unresolved high-severity npm audit findings. The adjacent `.d.ts` exists only so
+the inactive scaffold remains typechecked; it is not evidence that the runtime
+packages are present.
+
 ## Keep the repository agent-friendly
 
 When introducing a new convention, command, package boundary, or cross-feature

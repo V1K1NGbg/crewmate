@@ -134,6 +134,7 @@ export async function aiChat(
   model?: string,
   fetchImpl: FetchImplementation = fetch,
   signal?: AbortSignal,
+  options?: { maxTokens?: number; temperature?: number },
 ): Promise<string> {
   const baseUrl = normalizeAIServerUrl(serverUrl);
   const selectedModel =
@@ -156,6 +157,10 @@ export async function aiChat(
         model: selectedModel,
         messages: [{ role: "user", content: prompt }],
         stream: false,
+        ...(options?.maxTokens ? { max_tokens: options.maxTokens } : {}),
+        ...(options?.temperature !== undefined
+          ? { temperature: options.temperature }
+          : {}),
       }),
       signal,
     },

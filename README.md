@@ -169,9 +169,18 @@ Conversation history is sent only from the active chat session, and replies
 remain attached to the session that initiated them if the user switches chats.
 Feature context can include email, Calendar, Notes, and Tasks data. Crewmate
 warns before saving a remote AI endpoint; use only an endpoint you trust.
-When Mail translation is enabled, opened message text is also sent to that AI
-endpoint for language detection and translation. The original message remains
-available alongside the translated text.
+When Mail translation is enabled, Crewmate first uses the browser's on-device
+language detector and translator. Language packs are downloaded by Chrome after
+the user approves the first download, and translation then runs locally. An
+optional, disabled-by-default fallback can send message text to the configured
+AI endpoint when the browser APIs are unavailable. The visible message body
+switches to the plain-text translation, and the original remains available from
+the message header.
+
+The repository also contains a disabled scaffold for cross-browser, package-
+backed local translation. Its optional npm packages are intentionally not
+installed or enabled pending resolution and re-review of their dependency audit
+findings; see `AGENTS.md` before enabling it.
 
 Browser preferences and assistant history are stored under an opaque,
 account-specific key. They remain on the device after sign-out until cleared in

@@ -3,6 +3,7 @@ export interface GmailPluginSettings {
   defaultQuery: string;
   mainLanguage: string;
   autoTranslateForeignEmails: boolean;
+  allowAITranslationFallback: boolean;
   suggestionPrecomputeCount: number;
   suggestionActionCount: number;
   quickReviewEnabled: boolean;
@@ -17,8 +18,9 @@ export interface GmailPluginSettings {
 export const DEFAULT_GMAIL_SETTINGS: GmailPluginSettings = {
   maxThreads: 20,
   defaultQuery: "is:inbox",
-  mainLanguage: "English",
+  mainLanguage: "en",
   autoTranslateForeignEmails: true,
+  allowAITranslationFallback: false,
   suggestionPrecomputeCount: 5,
   suggestionActionCount: 6,
   quickReviewEnabled: false,

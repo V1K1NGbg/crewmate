@@ -42,9 +42,15 @@ import {
   waitsForReviewDestination,
 } from "./quickReview";
 import {
+  buildEmailLanguageDetectionPrompt,
   buildEmailTranslationPrompt,
+  emailTextForTranslation,
+  languageName,
   normalizeMainLanguage,
-  parseEmailTranslationResponse,
+  OnDeviceTranslationDownloadRequiredError,
+  parseEmailLanguageDetection,
+  translateEmailInBrowser,
+  translationResult,
   type EmailTranslationResult,
 } from "./translation";
 
@@ -62,10 +68,10 @@ type AIActionType =
   | "star_email";
 
 type MessageTranslation =
-  | { status: "loading" }
+  | { status: "loading"; progress?: number }
   | { status: "same"; sourceLanguage: string }
   | { status: "translated"; sourceLanguage: string; body: string }
-  | { status: "error" };
+  | { status: "error"; message: string; downloadRequired?: boolean };
 
 interface AIAction {
   type: AIActionType;
@@ -599,7 +605,6 @@ export default function GmailPage() {
       setShowOriginalMessages(new Set());
       if (
         gmailSettings.autoTranslateForeignEmails &&
-        state.aiServerAvailable &&
         msgs.length > 0
       ) {
         void translateMessages(msgs);
@@ -616,7 +621,10 @@ export default function GmailPage() {
     }
   }
 
-  async function translateMessages(messagesToTranslate: GmailMessage[]) {
+  async function translateMessages(
+    messagesToTranslate: GmailMessage[],
+    options: { allowDownload?: boolean } = {},
+  ) {
     translationControllerRef.current?.abort();
     const controller = new AbortController();
     translationControllerRef.current = controller;
@@ -639,20 +647,70 @@ export default function GmailPage() {
 
       setTranslations((current) => ({ ...current, [message.id]: { status: "loading" } }));
       try {
-        const plainText = message.body.includes("<")
-          ? stripHtml(message.body, 12000)
-          : (message.body || message.snippet).slice(0, 12000);
-        const response = await withTimeout(
-          aiChat(
+        const plainText = emailTextForTranslation(message.body, message.snippet);
+        let nativeError: unknown;
+        let result: EmailTranslationResult | null = null;
+        try {
+          result = await translateEmailInBrowser(
+            plainText,
+            mainLanguage,
+            globalThis as Parameters<typeof translateEmailInBrowser>[2],
+            {
+              allowDownload: options.allowDownload,
+              onDownloadProgress: (progress) => {
+                if (controller.signal.aborted) return;
+                setTranslations((current) => ({
+                  ...current,
+                  [message.id]: { status: "loading", progress },
+                }));
+              },
+            },
+          );
+        } catch (error: unknown) {
+          nativeError = error;
+        }
+        if (controller.signal.aborted) break;
+        if (!result) {
+          if (
+            !gmailSettings.allowAITranslationFallback ||
+            !state.aiServerAvailable
+          ) {
+            if (nativeError) throw nativeError;
+            throw new Error(
+              "On-device translation requires Chrome 138 or newer on desktop. No email text was sent elsewhere.",
+            );
+          }
+          const detectionResponse = await aiChat(
             state.aiServerUrl,
-            buildEmailTranslationPrompt(plainText, mainLanguage),
+            buildEmailLanguageDetectionPrompt(plainText, mainLanguage),
             state.assistantModel || undefined,
             undefined,
             controller.signal,
-          ),
-          MAIL_AI_TIMEOUT_MS,
-        );
-        const result = parseEmailTranslationResponse(response);
+            { maxTokens: 32, temperature: 0 },
+          );
+          const detection = parseEmailLanguageDetection(detectionResponse);
+          result = detection.sameLanguage
+            ? {
+                sameLanguage: true,
+                sourceLanguage: mainLanguage,
+                translation: "",
+              }
+            : translationResult(
+                detection.sourceLanguage,
+                await aiChat(
+                  state.aiServerUrl,
+                  buildEmailTranslationPrompt(
+                    plainText,
+                    mainLanguage,
+                    detection.sourceLanguage,
+                  ),
+                  state.assistantModel || undefined,
+                  undefined,
+                  controller.signal,
+                  { maxTokens: 2048, temperature: 0.1 },
+                ),
+              );
+        }
         translationCacheRef.current.set(cacheKey, result);
         setTranslations((current) => ({
           ...current,
@@ -660,9 +718,17 @@ export default function GmailPage() {
             ? { status: "same", sourceLanguage: result.sourceLanguage }
             : { status: "translated", sourceLanguage: result.sourceLanguage, body: result.translation },
         }));
-      } catch {
+      } catch (error: unknown) {
         if (controller.signal.aborted) break;
-        setTranslations((current) => ({ ...current, [message.id]: { status: "error" } }));
+        setTranslations((current) => ({
+          ...current,
+          [message.id]: {
+            status: "error",
+            message: error instanceof Error ? error.message : "Translation failed",
+            downloadRequired:
+              error instanceof OnDeviceTranslationDownloadRequiredError,
+          },
+        }));
       }
     }
     if (translationControllerRef.current === controller) setTranslationBusy(false);
@@ -682,7 +748,6 @@ export default function GmailPage() {
     setShowOriginalMessages(new Set());
     if (
       gmailSettings.autoTranslateForeignEmails &&
-      state.aiServerAvailable &&
       messages.length > 0
     ) {
       void translateMessages(messages);
@@ -693,6 +758,7 @@ export default function GmailPage() {
   }, [
     gmailSettings.autoTranslateForeignEmails,
     gmailSettings.mainLanguage,
+    gmailSettings.allowAITranslationFallback,
     state.aiServerAvailable,
   ]);
 
@@ -1762,7 +1828,10 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {translation?.status === "loading" && (
                             <span className="flex items-center gap-1 text-xs text-text-3">
-                              <Loader2 size={11} className="animate-spin" /> Translating…
+                              <Loader2 size={11} className="animate-spin" />
+                              {translation.progress !== undefined
+                                ? `Downloading ${Math.round(translation.progress * 100)}%…`
+                                : "Translating…"}
                             </span>
                           )}
                           {translation?.status === "translated" && (
@@ -1772,18 +1841,33 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                               className="rounded-lg border border-border-2 px-2 py-1 text-xs text-accent hover:bg-accent/10"
                             >
                               {showingOriginal
-                                ? `Show ${gmailSettings.mainLanguage || "English"}`
+                                ? `Show ${languageName(normalizeMainLanguage(gmailSettings.mainLanguage))}`
                                 : `Translated from ${translation.sourceLanguage} · Show original`}
                             </button>
                           )}
-                          {state.aiServerAvailable && !translationBusy &&
+                          {translation?.status === "error" && (
+                            <span
+                              className="max-w-64 text-xs text-danger"
+                              title={translation.message}
+                            >
+                              {translation.message}
+                            </span>
+                          )}
+                          {!translationBusy &&
                             (!translation || translation.status === "error") && (
                               <button
                                 type="button"
-                                onClick={() => void translateMessages([msg])}
+                                onClick={() =>
+                                  void translateMessages([msg], { allowDownload: true })
+                                }
                                 className="rounded-lg border border-border-2 px-2 py-1 text-xs text-text-2 hover:border-accent hover:text-accent"
+                                title={translation?.status === "error" ? translation.message : undefined}
                               >
-                                {translation?.status === "error" ? "Retry translation" : "Translate"}
+                                {translation?.status === "error" && translation.downloadRequired
+                                  ? "Download & translate"
+                                  : translation?.status === "error"
+                                    ? "Retry translation"
+                                    : "Translate"}
                               </button>
                             )}
                           <span className="text-xs text-text-3">
@@ -1800,7 +1884,11 @@ Example: [{"type":"create_event","label":"Schedule meeting","description":"Creat
                       </div>
                       <div className="h-px bg-border" />
                       <div className="px-6 py-5 overflow-hidden">
-                        <EmailBody body={translatedBody} snippet={msg.snippet} />
+                        <EmailBody
+                          key={`${msg.id}:${translation?.status === "translated" && !showingOriginal ? "translated" : "original"}`}
+                          body={translatedBody}
+                          snippet={msg.snippet}
+                        />
                       </div>
                       {idx === messages.length - 1 && (
                         <div className="px-5 pb-4">

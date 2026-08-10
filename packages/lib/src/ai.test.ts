@@ -190,3 +190,22 @@ test("cancels an in-flight chat request with the caller signal", async () => {
 
   await assert.rejects(request, { name: "AbortError" });
 });
+
+test("passes generation limits to OpenAI-compatible servers", async () => {
+  let requestBody: Record<string, unknown> = {};
+  const fetchMock = (async (_input: string | URL | Request, init?: RequestInit) => {
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return jsonResponse({ choices: [{ message: { content: "Translated" } }] });
+  }) as typeof fetch;
+
+  await aiChat(
+    "http://127.0.0.1:8080/v1",
+    "Translate",
+    "local-model",
+    fetchMock,
+    undefined,
+    { maxTokens: 2048, temperature: 0.1 },
+  );
+  assert.equal(requestBody.max_tokens, 2048);
+  assert.equal(requestBody.temperature, 0.1);
+});
