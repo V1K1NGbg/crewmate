@@ -1,0 +1,42 @@
+[Unit]
+Description=Crewmate protected host management API
+After=network.target
+RequiresMountsFor=/srv/crewmate/wireguard /var/lib/crewmate-host
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+Group=crewmate-host
+WorkingDirectory=/opt/crewmate-host
+ExecStart=/usr/bin/python3 -B /opt/crewmate-host/manager.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+RuntimeDirectory=crewmate-host
+RuntimeDirectoryMode=0750
+StateDirectory=crewmate-host
+StateDirectoryMode=0700
+UMask=0077
+LimitCORE=0
+MemoryMax=512M
+TasksMax=32
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+CapabilityBoundingSet=CAP_NET_ADMIN
+ReadWritePaths=/srv/crewmate/wireguard/wg_confs
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,7 @@
 import type { ComponentType } from "react";
 
+export type * from "./home";
+
 // ─── Page types ───────────────────────────────────────────────────────────────
 
 /**
@@ -76,6 +78,10 @@ export interface FeaturePlugin<TSettings = Record<string, unknown>> {
   keybinding?: string;
   /** Whether a fresh install should show this page by default. */
   enabledByDefault?: boolean;
+  /** Host can defer these pages without mounting hooks or requesting Google access. */
+  requiresGoogle?: boolean;
+  /** Defaults to true for editors; transient management pages opt out. */
+  keepMounted?: boolean;
   Page: ComponentType;
   defaultSettings: TSettings;
   SettingsSection?: ComponentType<FeatureSettingsProps<TSettings>>;

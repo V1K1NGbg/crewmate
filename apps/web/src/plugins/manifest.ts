@@ -11,6 +11,7 @@ import type { FeaturePackageId } from "@crewmate/types";
  */
 export const FEATURE_MANIFEST: { id: FeaturePackageId; packageName: string }[] =
   [
+    ...["overview", "photos", "containers", "ai", "vms", "vpn"].map((id) => ({ id, packageName: "@crewmate/home-server" })),
     { id: "mail", packageName: "@crewmate/mail" },
     { id: "calendar", packageName: "@crewmate/calendar" },
     { id: "notes", packageName: "@crewmate/notes" },

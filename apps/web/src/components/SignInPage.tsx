@@ -2,7 +2,7 @@
 
 import { signIn } from "next-auth/react";
 
-export default function SignInPage() {
+export default function SignInPage({ local = false }: { local?: boolean }) {
     return (
         <div className="min-h-dvh flex items-center justify-center bg-bg">
             <div
@@ -91,7 +91,7 @@ export default function SignInPage() {
                             Crewmate
                         </h1>
                         <p className="text-xs text-text-3 mt-0.5">
-                            Personal productivity dashboard
+                            {local ? "Your home server" : "Personal productivity dashboard"}
                         </p>
                     </div>
                 </div>
@@ -100,15 +100,15 @@ export default function SignInPage() {
 
                 <div className="w-full flex flex-col gap-4">
                     <p className="text-xs text-text-2 text-center leading-relaxed">
-                        Sign in to access your Gmail and Google Calendar.
+                        {local ? "Sign in with your local owner account." : "Sign in to access your Gmail and Google Calendar."}
                     </p>
                     <button
                         onClick={() =>
-                            signIn("google", { callbackUrl: "/app" })
+                            signIn(local ? "local" : "google", { callbackUrl: "/app" })
                         }
                         className="w-full flex items-center justify-center gap-2.5 py-2.5 bg-surface-2 border border-border-2 text-text text-sm font-semibold rounded-lg hover:border-accent hover:text-accent hover:bg-surface active:bg-bg transition-colors"
                     >
-                        <svg
+                        {!local && <svg
                             width="16"
                             height="16"
                             viewBox="0 0 24 24"
@@ -130,13 +130,13 @@ export default function SignInPage() {
                                 fill="#EA4335"
                                 d="M12.255 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C18.205 1.19 15.495 0 12.255 0c-4.64 0-8.74 2.7-10.71 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
                             />
-                        </svg>
-                        Continue with Google
+                        </svg>}
+                        {local ? "Continue with owner login" : "Continue with Google"}
                     </button>
                 </div>
 
                 <p className="text-xs text-text-3 text-center leading-relaxed">
-                    Requires Gmail and Google Calendar access
+                    {local ? "Local administration works independently of Google." : "Requires Gmail and Google Calendar access"}
                 </p>
             </div>
         </div>

@@ -2,6 +2,35 @@
 
 An AI-powered dashboard that integrates your Email, Calendar, Notes, and Tasks into a single interface, with an assistant that connects to any OpenAI-compatible API.
 
+## Home-server mode
+
+Crewmate also provides a single-owner front door for a private home server:
+host overview, embedded Immich and Portainer, existing libvirt VM controls,
+WireGuard peers, and a server-connected local AI assistant. Local login uses
+Authelia OIDC. Google authorization is a separate, deferred integration and is
+not required for administration.
+
+Start with [`deploy/README.md`](deploy/README.md) for the separate Compose stacks,
+private access configuration, setup gates, storage, and acceptance checks.
+[`services/host-manager/README.md`](services/host-manager/README.md) describes the
+restricted host service. Repository-managed Compose files own deployment;
+Portainer supplies runtime administration.
+
+Set `CREWMATE_AUTH_MODE=local` and the server-side variables documented in
+`apps/web/.env.example`. The exact OIDC owner subject must be configured;
+unrecognized accounts are denied. In this mode, AI calls use `/api/ai` and the
+operator-configured `CREWMATE_AI_URL`, never a phone's loopback address. Existing
+browser AI preferences are preserved under this runtime override. Sign out ends
+the Crewmate session and visits the identity portal's logout flow; the private
+gateway must protect direct service routes as well.
+
+**Deployment status:** these are repository implementation and deployment assets,
+not a completed hardware installation. Private names/HTTPS trust, live phone and
+desktop SSO/embedding/logout, pCloud headless folder-sync behavior, firewall
+isolation, resource budgets, and recovery require the documented live checks.
+Native pCloud sync is not a historical backup; Immich's originals mount is
+read-only and its organization lives in its separately persisted database.
+
 ---
 
 ## Features
@@ -27,7 +56,7 @@ An AI-powered dashboard that integrates your Email, Calendar, Notes, and Tasks i
 | Framework | Next.js 16 (App Router, Turbopack) |
 | UI | React 19, Tailwind CSS 4, Lucide React, react-markdown |
 | Language | TypeScript 6 |
-| Auth | NextAuth v5 (Google OAuth) |
+| Auth | NextAuth v5 (local owner OIDC or legacy Google OAuth) |
 | Google APIs | Gmail, Calendar, Docs, Drive, Tasks |
 | AI | OpenAI-compatible API, including local `llama-server` |
 
@@ -36,7 +65,7 @@ An AI-powered dashboard that integrates your Email, Calendar, Notes, and Tasks i
 ## Prerequisites
 
 1. **Node.js 22.18+** and **npm 10+**
-2. A **Google Cloud project** with OAuth 2.0 credentials configured
+2. For the original productivity mode, a **Google Cloud project** with OAuth 2.0 credentials configured (home-server setup is documented above)
 3. The following OAuth scopes enabled on your client:
    - `gmail.modify`, `calendar`, `documents`, `drive.file`, `tasks`
 4. Redirect URI set to `http://localhost:3000/api/auth/callback/google` (for local dev)
@@ -74,6 +103,8 @@ Open [http://localhost:3000](http://localhost:3000), sign in with Google, and yo
 npm run lint       # Lint the web app and every workspace package
 npm run typecheck  # Run strict TypeScript checking
 npm test           # Run all colocated package tests
+npm run test:host  # Host-manager boundary and recovery tests (Python 3.9+)
+npm run test:deployment # Deployment and effective Compose configuration checks
 npm run check      # Run lint, typecheck, and tests
 npm run check:all  # Run check plus a production build
 npm run build      # Production build
@@ -148,7 +179,7 @@ packages/
 
 ## AI Assistant
 
-The AI Assistant connects directly to an OpenAI-compatible API. It defaults to
+In the original Google/productivity mode, the AI Assistant connects directly to an OpenAI-compatible API. It defaults to
 `http://127.0.0.1:8080/v1`, the default local `llama-server` address used by
 Crewmate. Start a local server with a loaded model, then choose the model in
 **Settings → AI Assistant**:
@@ -159,7 +190,8 @@ llama-server -m /path/to/model.gguf --alias local-model --port 8080
 
 Crewmate discovers models with `GET /v1/models` and sends prompts with
 `POST /v1/chat/completions`. Other compatible servers can be used by changing
-the API base URL. API-key authentication is not implemented yet.
+the API base URL in productivity mode. Home-server mode instead uses authenticated
+backend routes; its optional API key stays in `CREWMATE_AI_KEY` on the server.
 
 The assistant opens as a centered overlay popup (90% of the viewport) with a
 blurred backdrop — click outside or press `Esc` to dismiss. It is loaded with

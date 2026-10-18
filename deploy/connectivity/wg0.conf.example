@@ -1,0 +1,13 @@
+# NOT usable until filled. Root-owned 0600 at:
+# /srv/crewmate/wireguard/wg_confs/wg0.conf
+# Host manager is the only runtime writer; do not configure PEERS in Compose.
+[Interface]
+Address = __SERVER_TUNNEL_IPV4_WITH_PREFIX__
+ListenPort = __WG_PORT__
+PrivateKey = __SERVER_PRIVATE_KEY__
+# No SaveConfig, PostUp, PostDown, forwarding ACCEPT, MASQUERADE or DNS listener.
+# The host firewall is installed BEFORE Docker and independently of this file.
+
+# Host manager adds [Peer] sections, each with one assigned tunnel /32.
+# Client AllowedIPs must contain ONLY the host LAN_IP/32 (not the LAN subnet).
+# Never retain or log a client private key after provisioning.

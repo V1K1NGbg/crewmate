@@ -49,6 +49,7 @@ function extractChatContent(raw: string): string | undefined {
 
 export function normalizeAIServerUrl(url: string): string {
   const trimmed = url.trim();
+  if (trimmed === "/api/ai") return trimmed;
   if (!trimmed) return DEFAULT_AI_SERVER_URL;
 
   const parsed = new URL(trimmed);

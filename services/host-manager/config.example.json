@@ -1,0 +1,11 @@
+{
+  "dataRoot": "/srv/crewmate",
+  "healthChecks": [],
+  "wireguard": {
+    "network": "10.77.0.0/24",
+    "serverAddress": "10.77.0.1/24",
+    "endpoint": "REPLACE-WITH-REACHABLE-ENDPOINT:51820",
+    "allowedIPs": ["10.77.0.1/32"],
+    "excludedNetworks": ["192.168.1.0/24", "172.16.0.0/12"]
+  }
+}

@@ -1,6 +1,9 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { createHmac } from "node:crypto";
+import { isLocalOwner } from "@crewmate/lib/server";
+
+export const localAuthEnabled = process.env.CREWMATE_AUTH_MODE === "local";
 
 async function refreshAccessToken(token: {
   refreshToken?: string;
@@ -37,7 +40,17 @@ async function refreshAccessToken(token: {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET,
-  providers: [
+  providers: localAuthEnabled ? [{
+    id: "local",
+    name: "Owner",
+    type: "oidc",
+    issuer: process.env.AUTH_OIDC_ISSUER,
+    clientId: process.env.AUTH_OIDC_CLIENT_ID,
+    clientSecret: process.env.AUTH_OIDC_CLIENT_SECRET,
+    client: { token_endpoint_auth_method: "client_secret_basic" },
+    authorization: { params: { scope: "openid profile email" } },
+    checks: ["pkce", "state", "nonce"],
+  }] : [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
@@ -59,17 +72,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
+  session: { strategy: "jwt", maxAge: localAuthEnabled ? 3600 : 30 * 24 * 3600 },
   callbacks: {
+    async signIn({ account, profile }) {
+      return !localAuthEnabled || isLocalOwner(account?.provider, profile?.sub, process.env.AUTH_OWNER_SUBJECT);
+    },
     async jwt({ token, account }) {
       if (account) {
+        if (account.provider === "local") {
+          // Local authentication never retains or refreshes Google or OIDC bearer tokens.
+          return { sub: token.sub, name: token.name, email: token.email, picture: token.picture, provider: "local" };
+        }
         return {
           ...token,
+          provider: "google",
           accessToken: account.access_token,
           refreshToken: account.refresh_token,
           expiresAt: account.expires_at,
           error: undefined,
         };
       }
+
+      if (localAuthEnabled || token.provider === "local") return token;
 
       const expiresAt = token.expiresAt as number | undefined;
       if (expiresAt && Date.now() / 1000 < expiresAt - 60) {
@@ -81,14 +105,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       );
     },
     async session({ session, token }) {
-      session.accessToken = token.accessToken as string;
-      session.error = token.error as "RefreshAccessTokenError" | undefined;
-      session.googleAuthStatus = token.error ? "reauth-required" : "ready";
+      session.authMode = localAuthEnabled ? "local" : "google";
+      session.localOwner = localAuthEnabled && isLocalOwner(token.provider, token.sub, process.env.AUTH_OWNER_SUBJECT);
+      session.accessToken = !localAuthEnabled && typeof token.accessToken === "string" ? token.accessToken : undefined;
+      session.error = !localAuthEnabled && token.error === "RefreshAccessTokenError" ? token.error : undefined;
+      session.googleAuthStatus = localAuthEnabled ? "deferred" : token.error || !session.accessToken ? "reauth-required" : "ready";
       session.accountKey = createHmac(
         "sha256",
         process.env.AUTH_SECRET ?? "crewmate-account-key",
       )
-        .update(token.sub ?? "unknown")
+        .update(token.provider === "local" ? `local:${process.env.AUTH_OIDC_ISSUER}:${token.sub}` : token.sub ?? "unknown")
         .digest("hex");
       return session;
     },

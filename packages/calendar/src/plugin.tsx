@@ -26,6 +26,7 @@ export const calendarPlugin: FeaturePlugin<CalendarPluginSettings> = {
   color: "#818cf8",
   keybinding: "2",
   enabledByDefault: true,
+  requiresGoogle: true,
   Page: lazy(() => import("./CalendarPage")),
   defaultSettings: DEFAULT_CALENDAR_SETTINGS,
   SettingsSection: lazy(() => import("./CalendarSettingsSection")),

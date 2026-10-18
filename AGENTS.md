@@ -23,6 +23,8 @@ Run commands from the repository root.
 npm install          # install/link all workspaces
 npm run dev          # Next.js development server
 npm test             # all packages/*/src/*.test.ts tests
+npm run test:host    # host-manager Python boundary/recovery tests
+npm run test:deployment # deployment configuration and firewall regression tests
 npm run lint         # app and all package source
 npm run typecheck    # strict TypeScript check
 npm run check        # lint + typecheck + tests
@@ -32,6 +34,9 @@ npm run check:all    # check + production build
 Use `npm run check` for normal source changes. Use `npm run check:all` when a
 change affects routing, bundling, package exports, server/client boundaries, or
 before a release. Report any check you could not run.
+Run `npm run test:host` for host-manager or management-contract changes as well.
+Run `npm run test:deployment` for deployment, network, or Docker packaging changes;
+its Compose parser checks require Docker CLI/Compose, not a running daemon.
 
 ## Repository boundaries
 
@@ -48,6 +53,11 @@ before a release. Report any check you could not run.
   Google helpers. Route handlers import these through `@crewmate/lib/server`.
 - `packages/{mail,calendar,notes,tasks}`: feature-owned UI, hooks, settings, and
   plugin descriptors. Do not import one feature package directly from another.
+- `packages/home-server`: overview, embedded service pages, AI status, and VM/VPN
+  controls. Shared wire contracts live in `packages/types/src/home.ts`.
+- `services/host-manager`: separately installed Unix-socket host service. Its
+  operation allowlist, durable outcomes, and local permissions are security boundaries.
+- `deploy`: repository-owned Compose stacks and host setup/recovery instructions.
 
 The intended dependency direction is:
 
@@ -68,6 +78,16 @@ Cross-feature behavior goes through `featureData`, `pagePrefills`, or the
   Google client. Validate required path/query/body data and return 400 for invalid
   requests, 401 for authentication failures, and a useful non-2xx response for
   other failures.
+- Local management and AI routes instead require `session.localOwner` in local
+  auth mode. Mutations check the configured application origin and JSON content
+  type. Never accept a backend URL, command, filesystem path, or Compose definition
+  from the browser. Crewmate must not receive the Docker socket.
+- `requiresGoogle` plugins are deferred without mounting in local mode. Keep
+  Google linking separate from owner authentication. Managed AI endpoints are a
+  runtime override; do not erase the user's persisted legacy endpoint preference.
+- Peer provisioning keys remain only in the one-time response/component state.
+  Preserve operation IDs and uncertain outcomes across the host/API/UI layers;
+  do not automatically retry a mutation after a lost connection.
 - Client fetches must check `response.ok` before consuming success data. Preserve
   resource identity through every mutation layer (for example both event ID and
   calendar ID).
@@ -113,6 +133,8 @@ it for package discovery.
 
 - Tests use Node's built-in `node:test` and `node:assert/strict` and are colocated
   as `packages/<name>/src/*.test.ts`. The root test command discovers them.
+- Helpers loaded by native Node tests use explicit `.ts` relative imports; the
+  web app's no-emit TypeScript configuration permits these imports.
 - Test boundary behavior: malformed persisted/external data, non-OK responses,
   stale async completion, empty states, and resource identifiers.
 - Do not rely only on lint. Typecheck and tests catch different failures.

@@ -24,6 +24,7 @@ export const notesPlugin: FeaturePlugin<NotesPluginSettings> = {
   color: "#fbbf24",
   keybinding: "3",
   enabledByDefault: true,
+  requiresGoogle: true,
   Page: lazy(() => import("./NotesPage")),
   defaultSettings: DEFAULT_NOTES_SETTINGS,
   SettingsSection: lazy(() => import("./NotesSettingsSection")),

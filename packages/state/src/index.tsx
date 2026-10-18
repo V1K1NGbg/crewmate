@@ -7,6 +7,7 @@ import {
   useReducer,
   useRef,
   useCallback,
+  useSyncExternalStore,
   type ReactNode,
   type Dispatch,
 } from "react";
@@ -342,6 +343,7 @@ function reducer(state: AppState, action: Action): AppState {
 
 interface AppContextValue {
   state: AppState;
+  aiEndpointManaged: boolean;
   dispatch: Dispatch<Action>;
   notify: (message: string, type?: AppNotification["type"]) => void;
   clearLocalData: (allAccounts?: boolean) => void;
@@ -349,12 +351,21 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-export function AppProvider({
+const subscribeToHydration = () => () => {};
+
+export function AppProvider(props: Parameters<typeof PersistedAppProvider>[0]) {
+  // Browser preferences must not replace server defaults during hydration.
+  const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
+  return hydrated ? <PersistedAppProvider key={props.accountKey} {...props} /> : null;
+}
+
+function PersistedAppProvider({
   children,
   initialInstalledFeatures,
   initialPages,
   initialFeatureSettings,
   accountKey,
+  fixedAIServerUrl,
 }: {
   children: ReactNode;
   /**
@@ -371,6 +382,8 @@ export function AppProvider({
   initialFeatureSettings?: Record<string, unknown>;
   /** Stable opaque account namespace supplied by the authenticated host. */
   accountKey: string;
+  /** Runtime policy overrides preferences without destroying their persisted values. */
+  fixedAIServerUrl?: string;
 }) {
   const saved = typeof window !== "undefined" ? loadPersisted(accountKey) : {};
   const legacySaved = saved as Partial<AppState> & { opencodeUrl?: string };
@@ -523,7 +536,7 @@ export function AppProvider({
   }, [state.notification]);
 
   return (
-    <AppContext.Provider value={{ state, dispatch, notify, clearLocalData }}>
+    <AppContext.Provider value={{ state: fixedAIServerUrl ? { ...state, aiServerUrl: fixedAIServerUrl } : state, aiEndpointManaged: Boolean(fixedAIServerUrl), dispatch, notify, clearLocalData }}>
       {children}
     </AppContext.Provider>
   );

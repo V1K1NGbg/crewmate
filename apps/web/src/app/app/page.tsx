@@ -1,4 +1,4 @@
-import { auth } from "@/auth";
+import { auth, localAuthEnabled } from "@/auth";
 import { redirect } from "next/navigation";
 import { AppProvider } from "@crewmate/state";
 import type { Page } from "@crewmate/types";
@@ -10,20 +10,20 @@ import { PLUGINS } from "@/plugins/registry";
 
 export default async function AppPage() {
   const session = await auth();
-  if (!session) redirect("/");
+  if (!session || (localAuthEnabled && !session.localOwner)) redirect("/");
   const installedFeatures = getInstalledFeatures();
   const installedIds = new Set(
     installedFeatures.filter((f) => f.installed).map((f) => f.id),
   );
 
   const defaultPlugins = PLUGINS.filter(
-    (p) => installedIds.has(p.id) && p.enabledByDefault,
+    (p) => installedIds.has(p.id) && p.enabledByDefault && (localAuthEnabled ? !p.requiresGoogle : p.packageName !== "@crewmate/home-server"),
   );
   const initialPages: Page[] = defaultPlugins.map((p, i) => ({
     id: p.id,
     type: p.id,
     label: p.label,
-    keybinding: p.keybinding ?? String(i + 1),
+    keybinding: String(i + 1),
   }));
   const initialFeatureSettings: Record<string, unknown> = Object.fromEntries(
     PLUGINS.map((p) => [p.id, p.defaultSettings]),
@@ -33,12 +33,13 @@ export default async function AppPage() {
     <SessionProvider>
       <AppProvider
         accountKey={session.accountKey}
+        fixedAIServerUrl={localAuthEnabled ? "/api/ai" : undefined}
         initialInstalledFeatures={installedFeatures}
         initialPages={initialPages}
         initialFeatureSettings={initialFeatureSettings}
       >
         <ColorSchemeProvider>
-          <AppShell />
+          <AppShell googleDeferred={localAuthEnabled} />
         </ColorSchemeProvider>
       </AppProvider>
     </SessionProvider>

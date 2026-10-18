@@ -1,19 +1,13 @@
-import { handlers } from "@/auth";
-import { NextResponse, type NextRequest } from "next/server";
-import { sanitizeBrowserSession } from "@crewmate/lib/server";
+import { handlers, localAuthEnabled } from "@/auth";
+import { type NextRequest } from "next/server";
+import { browserAuthResponse } from "@crewmate/lib/server";
 
-export const POST = handlers.POST;
+export async function POST(req: NextRequest) {
+  return browserAuthResponse(req, await handlers.POST(req),
+    localAuthEnabled ? process.env.CREWMATE_IDENTITY_URL ?? process.env.AUTH_OIDC_ISSUER ?? "" : undefined);
+}
 
 /** Keep Google bearer credentials out of the browser-visible session JSON. */
 export async function GET(req: NextRequest) {
-  const response = await handlers.GET(req);
-  if (!req.nextUrl.pathname.endsWith("/session") || !response.ok) return response;
-
-  const session = sanitizeBrowserSession(
-    (await response.json()) as Record<string, unknown>,
-  );
-  const headers = new Headers(response.headers);
-  headers.delete("content-length");
-  headers.delete("content-type");
-  return NextResponse.json(session, { status: response.status, headers });
+  return browserAuthResponse(req, await handlers.GET(req));
 }

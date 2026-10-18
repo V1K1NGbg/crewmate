@@ -19,7 +19,7 @@ function PageFallback() {
   );
 }
 
-export default function AppShell() {
+export default function AppShell({ googleDeferred = false }: { googleDeferred?: boolean }) {
   const { state, dispatch } = useApp();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const rawMailSettings = state.pageSettings.features.mail;
@@ -39,9 +39,11 @@ export default function AppShell() {
     : "r";
 
   useEffect(() => {
+    let current = true;
     detectAIServer(state.aiServerUrl).then((available) => {
-      dispatch({ type: "SET_AI_SERVER_AVAILABLE", available });
+      if (current) dispatch({ type: "SET_AI_SERVER_AVAILABLE", available });
     });
+    return () => { current = false; };
   }, [state.aiServerUrl, dispatch]);
 
   // Defense in depth: if installed-feature info wasn't provided server-side
@@ -71,6 +73,7 @@ export default function AppShell() {
       if (isEditing) return;
 
       if (
+        !googleDeferred &&
         !e.ctrlKey &&
         !e.metaKey &&
         !e.altKey &&
@@ -132,6 +135,7 @@ export default function AppShell() {
     dispatch,
     quickReviewEnabled,
     quickReviewToggleKey,
+    googleDeferred,
   ]);
 
   const activePage =
@@ -154,13 +158,19 @@ export default function AppShell() {
               const isActive = page.id === activePage?.id;
               const plugin = getPlugin(page.type);
               if (!plugin) return null;
+              if (plugin.keepMounted === false && !isActive) return null;
               return (
                 <div
                   key={page.id}
                   className="flex-1 flex overflow-hidden"
                   style={{ display: isActive ? "flex" : "none" }}
                 >
-                  <plugin.Page />
+                  {googleDeferred && plugin.requiresGoogle ? (
+                    <div className="m-auto max-w-md p-6 text-center text-text-2">
+                      <h1 className="text-lg font-semibold text-text">{plugin.label}</h1>
+                      <p className="mt-3">Google connection is a future setup step. Your local server controls are available independently.</p>
+                    </div>
+                  ) : <plugin.Page />}
                 </div>
               );
             })}
@@ -189,7 +199,7 @@ export default function AppShell() {
         </div>
 
         {/* Status bar */}
-        <div className="h-8 flex items-center px-5 bg-bg border-t border-border gap-4 flex-shrink-0 overflow-hidden">
+        <div className="hidden sm:flex h-8 items-center px-5 bg-bg border-t border-border gap-4 flex-shrink-0 overflow-hidden">
           {state.pages.slice(0, 9).map((p) => (
             <button
               key={p.id}
@@ -205,12 +215,12 @@ export default function AppShell() {
             </button>
           ))}
           <span className="ml-auto flex items-center gap-3 text-xs text-text-3">
-            <span className="flex items-center gap-1.5">
+            {!googleDeferred && <span className="flex items-center gap-1.5">
               <kbd className="font-mono text-xs uppercase opacity-60">
                 {quickReviewToggleKey}
               </kbd>
               <span>Review {quickReviewEnabled ? "on" : "off"}</span>
-            </span>
+            </span>}
             <span className="flex items-center gap-1.5">
               <kbd className="font-mono text-xs opacity-60">O</kbd>
               <span>AI</span>

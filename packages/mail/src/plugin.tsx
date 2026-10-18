@@ -28,6 +28,7 @@ export const mailPlugin: FeaturePlugin<GmailPluginSettings> = {
   color: "#f87171",
   keybinding: "1",
   enabledByDefault: true,
+  requiresGoogle: true,
   Page: lazy(() => import("./GmailPage")),
   defaultSettings: DEFAULT_GMAIL_SETTINGS,
   SettingsSection: lazy(() => import("./GmailSettingsSection")),

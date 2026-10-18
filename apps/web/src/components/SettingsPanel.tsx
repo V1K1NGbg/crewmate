@@ -62,7 +62,7 @@ function pageForPlugin(plugin: FeaturePlugin): Page {
 }
 
 export default function SettingsPanel({ onClose }: { onClose: () => void }) {
-  const { state, dispatch, notify, clearLocalData } = useApp();
+  const { state, dispatch, notify, clearLocalData, aiEndpointManaged } = useApp();
   const dialogRef = useDialogFocus();
   const [activeSection, setActiveSection] = useState<string>("general");
   const [checkingFeatures, setCheckingFeatures] = useState(false);
@@ -81,7 +81,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   }
 
   const pluginSections: SectionDef[] = PLUGINS.filter(
-    (p) => isInstalled(p.id) && isFeatureEnabled(p.id) && p.SettingsSection,
+    (p) => isInstalled(p.id) && isFeatureEnabled(p.id) && p.SettingsSection && !(aiEndpointManaged && p.requiresGoogle),
   ).map((p) => ({ id: p.id, label: p.label, icon: p.icon }));
 
   const SECTIONS = [...STATIC_SECTIONS, ...pluginSections];
@@ -180,11 +180,20 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   }
 
   function saveAI() {
+    if (aiEndpointManaged) {
+      dispatch({ type: "SET_ASSISTANT_MODEL", model: modelDraft });
+      notify("AI model saved", "success");
+      return;
+    }
     let normalizedUrl: string;
     try {
       normalizedUrl = normalizeAIServerUrl(urlDraft);
     } catch {
       notify("Enter a valid AI server URL", "error");
+      return;
+    }
+    if (normalizedUrl === "/api/ai") {
+      notify("The managed AI endpoint requires local owner mode", "error");
       return;
     }
     const endpoint = new URL(normalizedUrl);
@@ -240,30 +249,32 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
 
         <div className="flex flex-1 overflow-hidden">
           {/* Sidebar — wider tabs */}
-          <nav className="w-60 flex-shrink-0 border-r border-border bg-surface overflow-y-auto py-4">
+          <nav aria-label="Settings sections" className="w-14 sm:w-60 flex-shrink-0 border-r border-border bg-surface overflow-y-auto py-4">
             {SECTIONS.map((s) => {
               const Icon = s.icon;
               const isActive = resolvedActiveSection === s.id;
               return (
                 <button
                   key={s.id}
+                  aria-label={s.label}
+                  title={s.label}
                   onClick={() => setActiveSection(s.id)}
-                  className={`w-full flex items-center gap-3 px-5 py-3.5 text-sm font-medium transition-colors ${
+                  className={`w-full flex items-center justify-center sm:justify-start gap-3 px-3 sm:px-5 py-3.5 text-sm font-medium transition-colors ${
                     isActive
                       ? "text-text bg-surface-2 border-l-2 border-accent"
                       : "text-text-2 hover:text-text hover:bg-surface-2/50 border-l-2 border-transparent"
                   }`}
                 >
                   <Icon size={18} className={isActive ? "text-accent" : ""} />
-                  {s.label}
+                  <span className="hidden sm:inline">{s.label}</span>
                 </button>
               );
             })}
           </nav>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="max-w-xl mx-auto px-8 py-6">
+          <div className="min-w-0 flex-1 overflow-y-auto">
+            <div className="max-w-xl mx-auto px-3 sm:px-8 py-6">
               <h2 className="text-base font-semibold text-text mb-1">
                 {SECTIONS.find((s) => s.id === resolvedActiveSection)?.label}
               </h2>
@@ -623,11 +634,12 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                   <>
                     <SettingRow
                       label="API base URL"
-                      description="OpenAI-compatible API including /v1. Enabled feature context may be sent to this endpoint; remote endpoints should be trusted and use HTTPS."
+                      description={aiEndpointManaged ? "Managed on the server. Browser requests use Crewmate's authenticated AI route." : "OpenAI-compatible API including /v1. Enabled feature context may be sent to this endpoint; remote endpoints should be trusted and use HTTPS."}
                     >
                       <input
                         className="settings-input"
                         value={urlDraft}
+                        readOnly={aiEndpointManaged}
                         onChange={(e) => {
                           setUrlDraft(e.target.value);
                           setModels([]);

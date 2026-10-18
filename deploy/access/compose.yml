@@ -1,0 +1,91 @@
+name: crewmate-access
+x-logging: &logging
+  driver: local
+  options: {max-size: 10m, max-file: "3"}
+services:
+  caddy:
+    image: caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    ports:
+      - "${LAN_IP:?set LAN_IP}:443:443/tcp"
+    environment:
+      CREWMATE_HOST: ${CREWMATE_HOST:?set CREWMATE_HOST}
+      IDENTITY_HOST: ${IDENTITY_HOST:?set IDENTITY_HOST}
+      PORTAINER_HOST: ${PORTAINER_HOST:?set PORTAINER_HOST}
+      IMMICH_HOST: ${IMMICH_HOST:?set IMMICH_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - {type: bind, source: /etc/crewmate/rendered/tls.caddy, target: /etc/caddy/tls.caddy, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: /etc/crewmate/certificates, target: /certificates, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: /srv/crewmate/caddy/data, target: /data, bind: {create_host_path: false}}
+      - {type: bind, source: /srv/crewmate/caddy/config, target: /config, bind: {create_host_path: false}}
+    networks:
+      edge: {gw_priority: 1}
+      identity: {}
+      dashboard:
+        aliases: ["${IDENTITY_HOST:?set IDENTITY_HOST}"]
+      admin:
+        aliases: ["${IDENTITY_HOST:?set IDENTITY_HOST}"]
+      photos:
+        aliases: ["${IDENTITY_HOST:?set IDENTITY_HOST}"]
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 1
+    logging: *logging
+  authelia:
+    image: authelia/authelia:4.39.28@sha256:bd97cff4fcbf715b5ff1f9ae286afbe6033afce385302520b0368122d43a6f54
+    command: [authelia, --config, /config/configuration.yml]
+    volumes:
+      - {type: bind, source: /etc/crewmate/rendered/configuration.yml, target: /config/configuration.yml, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: /etc/crewmate/rendered/users.yml, target: /config/users.yml, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: /srv/crewmate/authelia, target: /data, bind: {create_host_path: false}}
+    networks: [identity]
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1
+    logging: *logging
+  crewmate:
+    image: ${CREWMATE_IMAGE:?build and set an immutable Crewmate image ID or digest}
+    user: "1000:1000"
+    group_add: ["${HOST_MANAGER_GID:?set numeric crewmate-host group GID}"]
+    environment:
+      CREWMATE_AUTH_MODE: local
+      AUTH_TRUST_HOST: "true"
+      AUTH_URL: https://${CREWMATE_HOST:?set CREWMATE_HOST}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET}
+      AUTH_OIDC_ISSUER: https://${IDENTITY_HOST:?set IDENTITY_HOST}
+      AUTH_OIDC_CLIENT_ID: ${AUTH_OIDC_CLIENT_ID:?set AUTH_OIDC_CLIENT_ID}
+      AUTH_OIDC_CLIENT_SECRET: ${AUTH_OIDC_CLIENT_SECRET:?set AUTH_OIDC_CLIENT_SECRET}
+      # Empty ONLY during identity bootstrap; full configure.py check requires it.
+      AUTH_OWNER_SUBJECT: ${AUTH_OWNER_SUBJECT:-}
+      CREWMATE_PHOTOS_URL: https://${IMMICH_HOST:?set IMMICH_HOST}
+      CREWMATE_CONTAINERS_URL: https://${PORTAINER_HOST:?set PORTAINER_HOST}
+      CREWMATE_IDENTITY_URL: https://${IDENTITY_HOST:?set IDENTITY_HOST}
+      CREWMATE_AI_URL: http://llama:8080/v1
+      CREWMATE_AI_KEY: ${CREWMATE_AI_KEY:-}
+      CREWMATE_HOST_SOCKET: /run/crewmate-host/manager.sock
+      NODE_EXTRA_CA_CERTS: /certificates/trust.pem
+    volumes:
+      - type: bind
+        source: /run/crewmate-host
+        target: /run/crewmate-host
+        read_only: true
+        bind:
+          create_host_path: false
+      - {type: bind, source: /etc/crewmate/certificates/trust.pem, target: /certificates/trust.pem, read_only: true, bind: {create_host_path: false}}
+    networks: [dashboard, ai]
+    read_only: true
+    tmpfs: [/tmp, /app/apps/web/.next/cache:uid=1000,gid=1000]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    restart: unless-stopped
+    mem_limit: ${CREWMATE_MEMORY:?set measured budget}
+    cpus: ${CREWMATE_CPUS:?set measured budget}
+    logging: *logging
+networks:
+  edge: {external: true, name: crewmate-edge}
+  identity: {external: true, name: crewmate-identity}
+  dashboard: {external: true, name: crewmate-dashboard}
+  admin: {external: true, name: crewmate-admin}
+  photos: {external: true, name: crewmate-photos-proxy}
+  ai: {external: true, name: crewmate-ai}

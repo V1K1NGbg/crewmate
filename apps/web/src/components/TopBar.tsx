@@ -2,6 +2,7 @@
 
 import { useApp } from "@crewmate/state";
 import { Bot, Circle, Settings } from "lucide-react";
+import LogoutButton from "./LogoutButton";
 
 export default function TopBar({
   onSettingsToggle,
@@ -14,11 +15,12 @@ export default function TopBar({
   const activePage = state.pages.find((p) => p.id === state.activePage);
 
   return (
-    <div className="h-14 flex items-center justify-between px-6 bg-surface/30 border-b border-border flex-shrink-0">
-      <span className="text-sm font-medium text-text-2 tracking-wide">
+    <div className="h-14 flex items-center justify-between gap-2 px-3 sm:px-6 bg-surface/30 border-b border-border flex-shrink-0">
+      <span className="min-w-0 truncate text-sm font-medium text-text-2 tracking-wide">
         {activePage?.label ?? "Crewmate"}
       </span>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-shrink-0 items-center gap-1 sm:gap-2">
+        <LogoutButton />
         <button
           onClick={onSettingsToggle}
           title="Settings"

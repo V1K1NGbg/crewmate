@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Crewmate",
-  description: "Personal productivity dashboard",
+  description: "Personal home server and productivity dashboard",
 };
 
 export default function RootLayout({

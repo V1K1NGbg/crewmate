@@ -1,0 +1,83 @@
+# Adapted from the exact v3.3.3 release stack; see ../RELEASES.md.
+name: crewmate-photos
+x-logging: &logging
+  driver: local
+  options: {max-size: 10m, max-file: "3"}
+services:
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:v3.3.3@sha256:bae7664ff3aa4c2c1fcbdcdd86b40b105643c5f861f3e6a770fc760089f25862
+    environment:
+      DB_HOSTNAME: database
+      DB_USERNAME: immich
+      DB_DATABASE_NAME: immich
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      REDIS_HOSTNAME: redis
+      NODE_EXTRA_CA_CERTS: /certificates/trust.pem
+    volumes:
+      - {type: bind, source: /srv/crewmate/immich/data, target: /data, bind: {create_host_path: false}}
+      - /etc/localtime:/etc/localtime:ro
+      - {type: bind, source: /etc/crewmate/certificates/trust.pem, target: /certificates/trust.pem, read_only: true, bind: {create_host_path: false}}
+      - type: bind
+        source: /srv/crewmate/pcloud/originals
+        target: /external/pcloud
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [photos, data, egress]
+    depends_on:
+      redis: {condition: service_healthy}
+      database: {condition: service_healthy}
+    restart: unless-stopped
+    mem_limit: ${IMMICH_MEMORY:?set measured budget}
+    cpus: ${IMMICH_CPUS:?set measured budget}
+    healthcheck: {disable: false}
+    logging: *logging
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:v3.3.3@sha256:73915f07e1f4289ba45b174c58443db74cef47ddf502613f475fc5e52458ea42
+    environment:
+      MACHINE_LEARNING_MODEL_INTER_OP_THREADS: "1"
+      MACHINE_LEARNING_MODEL_INTRA_OP_THREADS: ${IMMICH_ML_THREADS:?set measured CPU budget}
+    volumes:
+      - {type: bind, source: /srv/crewmate/immich/model-cache, target: /cache, bind: {create_host_path: false}}
+    # CPU image; outbound model downloads need egress, not a GPU reservation.
+    networks: [data, egress]
+    restart: unless-stopped
+    mem_limit: ${IMMICH_ML_MEMORY:?set measured budget}
+    cpus: ${IMMICH_ML_CPUS:?set measured budget}
+    healthcheck: {disable: false}
+    logging: *logging
+  redis:
+    image: docker.io/valkey/valkey:9@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
+    command: [valkey-server, --appendonly, "yes", --appendfsync, always]
+    volumes:
+      - {type: bind, source: /srv/crewmate/immich/redis, target: /data, bind: {create_host_path: false}}
+    networks: [data]
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: [CMD-SHELL, "redis-cli ping | grep -q PONG || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *logging
+  database:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      POSTGRES_USER: immich
+      POSTGRES_DB: immich
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes:
+      - {type: bind, source: /srv/crewmate/immich/postgres, target: /var/lib/postgresql/data, bind: {create_host_path: false}}
+    networks: [data]
+    shm_size: 128mb
+    restart: unless-stopped
+    mem_limit: ${DB_MEMORY:?set measured budget}
+    cpus: ${DB_CPUS:?set measured budget}
+    healthcheck: {disable: false}
+    logging: *logging
+networks:
+  photos: {external: true, name: crewmate-photos-proxy}
+  data: {external: true, name: crewmate-photos-data}
+  egress: {external: true, name: crewmate-photos-egress}

@@ -1,0 +1,21 @@
+name: crewmate-admin
+services:
+  portainer:
+    image: portainer/portainer-ce:2.45.2@sha256:03f94a406496dc84d37b552795fc424ccad8d0d7200353b6a82915f6e8f73ab0
+    command: [--http-enabled, --no-csp]
+    environment:
+      SSL_CERT_FILE: /certificates/trust.pem
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - {type: bind, source: /srv/crewmate/portainer, target: /data, bind: {create_host_path: false}}
+      - {type: bind, source: /etc/crewmate/certificates/trust.pem, target: /certificates/trust.pem, read_only: true, bind: {create_host_path: false}}
+    # No published 8000/9000/9443; only the gateway is a network peer.
+    networks: [admin]
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1
+    logging:
+      driver: local
+      options: {max-size: 10m, max-file: "3"}
+networks:
+  admin: {external: true, name: crewmate-admin}

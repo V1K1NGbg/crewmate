@@ -1,0 +1,8 @@
+{
+  "firewall-backend": "iptables",
+  "iptables": true,
+  "ip6tables": true,
+  "live-restore": false,
+  "log-driver": "local",
+  "log-opts": {"max-size": "10m", "max-file": "3"}
+}

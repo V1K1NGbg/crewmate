@@ -64,6 +64,8 @@ test("parses newline-delimited suggestions without an outer array", () => {
 });
 
 test("normalizes a server origin to an OpenAI-compatible v1 base URL", () => {
+  assert.equal(normalizeAIServerUrl("/api/ai"), "/api/ai");
+  assert.throws(() => normalizeAIServerUrl("//attacker.test"));
   assert.equal(
     normalizeAIServerUrl(" http://127.0.0.1:8080/ "),
     "http://127.0.0.1:8080/v1",

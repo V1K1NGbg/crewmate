@@ -18,7 +18,7 @@ export default function Navigation() {
   );
 
   return (
-    <nav className="flex flex-col items-center py-4 gap-1.5 bg-surface/50 border-r border-border w-16 flex-shrink-0">
+    <nav aria-label="Pages" className="flex flex-col items-center overflow-y-auto py-4 gap-1.5 bg-surface/50 border-r border-border w-12 sm:w-16 flex-shrink-0">
       {state.pages.map((page) => {
         const plugin = getPlugin(page.type);
         if (!plugin) return null;
@@ -37,7 +37,8 @@ export default function Navigation() {
             }
             title={`${page.label}  [${page.keybinding}]`}
             aria-label={`Open ${page.label}`}
-            className={`relative w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
+            aria-current={isActive ? "page" : undefined}
+            className={`relative w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-xl transition-all duration-200 ${
               isActive ? "" : "hover:bg-surface-2/50"
             }`}
             style={

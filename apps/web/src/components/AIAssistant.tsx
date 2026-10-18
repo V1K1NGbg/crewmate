@@ -13,6 +13,7 @@ import {
   Plus,
   MessageSquare,
   Navigation,
+  Square,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -23,7 +24,7 @@ import { PLUGINS, getPlugin } from "@/plugins/registry";
 
 /** Assistant actions contributed by every currently-enabled plugin. */
 function enabledActionDefs(state: ReturnType<typeof useApp>["state"]) {
-  return PLUGINS.filter((p) => state.pages.some((pg) => pg.type === p.id)).flatMap(
+  return PLUGINS.filter((p) => state.pages.some((pg) => pg.type === p.id) && !(state.aiServerUrl === "/api/ai" && p.requiresGoogle)).flatMap(
     (p) => (p.assistantActions ?? []).map((def) => ({ plugin: p, def })),
   );
 }
@@ -118,6 +119,8 @@ export default function AIAssistant() {
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const requestRef = useRef<AbortController | null>(null);
+  useEffect(() => () => requestRef.current?.abort(), []);
 
   // Get active session and its messages
   const activeSession = state.assistantSessions.find(
@@ -224,6 +227,8 @@ export default function AIAssistant() {
     dispatch({ type: "ADD_ASSISTANT_MESSAGE", message: userMsg });
     setInput("");
     setLoading(true);
+    const controller = new AbortController();
+    requestRef.current = controller;
 
     try {
       const context = buildPageContext(state);
@@ -235,6 +240,8 @@ export default function AIAssistant() {
         state.aiServerUrl,
         fullPrompt,
         state.assistantModel || undefined,
+        fetch,
+        controller.signal,
       );
       const { content, actions } = parseActionsFromResponse(rawResponse, state);
       const assistantMsg: AssistantMessage = {
@@ -247,6 +254,7 @@ export default function AIAssistant() {
       };
       dispatch({ type: "ADD_ASSISTANT_MESSAGE", message: assistantMsg });
     } catch {
+      if (controller.signal.aborted) return;
       notify("Failed to get AI response", "error");
       const errorMsg: AssistantMessage = {
         id: crypto.randomUUID(),
@@ -258,6 +266,7 @@ export default function AIAssistant() {
       };
       dispatch({ type: "ADD_ASSISTANT_MESSAGE", message: errorMsg });
     } finally {
+      if (requestRef.current === controller) requestRef.current = null;
       setLoading(false);
     }
   }, [input, loading, state, dispatch, notify]);
@@ -519,11 +528,13 @@ export default function AIAssistant() {
               disabled={loading}
             />
             <button
-              onClick={sendMessage}
-              disabled={loading || !input.trim()}
+              onClick={loading ? () => requestRef.current?.abort() : sendMessage}
+              disabled={!loading && !input.trim()}
+              aria-label={loading ? "Stop generation" : "Send message"}
+              title={loading ? "Stop generation" : "Send message"}
               className="w-8 h-8 flex items-center justify-center bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-40 transition-colors flex-shrink-0"
             >
-              <Send size={15} />
+              {loading ? <Square size={14} /> : <Send size={15} />}
             </button>
           </label>
         )}

@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   transpilePackages: [
     "@crewmate/types",
     "@crewmate/state",
@@ -9,6 +10,7 @@ const nextConfig: NextConfig = {
     "@crewmate/calendar",
     "@crewmate/notes",
     "@crewmate/tasks",
+    "@crewmate/home-server",
   ],
 };
 

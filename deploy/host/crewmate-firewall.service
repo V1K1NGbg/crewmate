@@ -1,0 +1,14 @@
+[Unit]
+Description=Crewmate private ingress and server-only WireGuard firewall
+Wants=network-online.target
+After=network-online.target
+Before=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/crewmate/deploy/firewall.py apply --env /etc/crewmate/deployment.env
+RemainAfterExit=yes
+# Deliberately no ExecStop: stopping a unit must not remove the security boundary.
+
+[Install]
+WantedBy=multi-user.target

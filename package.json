@@ -17,6 +17,8 @@
         "lint": "eslint --config apps/web/eslint.config.mjs apps/web/src packages",
         "typecheck": "tsc -p apps/web/tsconfig.json --noEmit --pretty false",
         "test": "node --test packages/*/src/*.test.ts",
+        "test:host": "python3 -B -m unittest discover -s services/host-manager -p 'test_*.py'",
+        "test:deployment": "python3 -B -m unittest discover -s deploy -p 'test_*.py'",
         "check": "npm run lint && npm run typecheck && npm test",
         "check:all": "npm run check && npm run build"
     },
@@ -25,13 +27,13 @@
         "@types/react": "^19.2.17",
         "@types/react-dom": "^19.2.3",
         "eslint": "^9.39.5",
-        "eslint-config-next": "16.2.12",
+        "eslint-config-next": "16.3.8",
         "typescript": "^6.0.3"
     },
     "overrides": {
         "next": {
             "postcss": "8.5.24",
-            "sharp": "0.35.3"
+            "sharp": "0.35.5"
         }
     }
 }

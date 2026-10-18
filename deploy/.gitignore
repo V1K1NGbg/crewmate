@@ -1,0 +1,4 @@
+.env
+rendered/
+*.local.*
+__pycache__/

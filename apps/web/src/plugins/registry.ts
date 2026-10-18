@@ -2,6 +2,7 @@ import { mailPlugin } from "@crewmate/mail";
 import { calendarPlugin } from "@crewmate/calendar";
 import { notesPlugin } from "@crewmate/notes";
 import { tasksPlugin } from "@crewmate/tasks";
+import { homeServerPlugins } from "@crewmate/home-server";
 import type { FeaturePlugin } from "@crewmate/types";
 
 /**
@@ -17,6 +18,7 @@ import type { FeaturePlugin } from "@crewmate/types";
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const PLUGINS: FeaturePlugin<any>[] = [
+  ...homeServerPlugins.map((plugin) => ({ ...plugin, keepMounted: false })),
   mailPlugin,
   calendarPlugin,
   notesPlugin,

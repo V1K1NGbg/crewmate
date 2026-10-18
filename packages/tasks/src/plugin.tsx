@@ -30,6 +30,7 @@ export const tasksPlugin: FeaturePlugin<TasksPluginSettings> = {
   color: "#4ade80",
   keybinding: "4",
   enabledByDefault: true,
+  requiresGoogle: true,
   Page: lazy(() => import("./TasksPage")),
   defaultSettings: DEFAULT_TASKS_SETTINGS,
   SettingsSection: lazy(() => import("./TasksSettingsSection")),
