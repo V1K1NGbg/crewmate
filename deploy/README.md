@@ -6,7 +6,8 @@ performed. Authelia and repository-managed Compose are selected; naming/trusted
 HTTPS remain **pending an explicit user decision**. Official pCloud native folder
 sync is **blocked** by its currently unsupported setup interface.
 
-Start with [acceptance/status](ACCEPTANCE.md), [network policy](NETWORK.md),
+Start with the [step-by-step installation guide](INSTALL.md),
+[acceptance/status](ACCEPTANCE.md), [network policy](NETWORK.md),
 [identity setup](IDENTITY.md), [pCloud gate](photos/PCLOUD-GATE.md),
 [recovery](RECOVERY.md), and [verified artifact pins](RELEASES.md).
 
