@@ -6,6 +6,9 @@ import {
   getGmailHeader,
 } from "@crewmate/lib/server";
 import { googleErrorResponse } from "@/lib/google-error-response";
+import { isResourceId, readJsonObject, readOptionalJsonObject } from "@/lib/requestValidation";
+
+const invalidId = () => NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
 
 export async function GET(
   _req: Request,
@@ -16,6 +19,7 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  if (!isResourceId(id, 128)) return invalidId();
   const gmail = getGmailClient(session.accessToken);
 
   try {
@@ -66,8 +70,13 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  if (!isResourceId(id, 128)) return invalidId();
   const gmail = getGmailClient(session.accessToken);
-  const body = await req.json().catch(() => ({}));
+  // An empty body means "archive" for backwards compatibility.
+  const body = await readOptionalJsonObject(req, 1024);
+  if (!body || (body.archive !== undefined && typeof body.archive !== "boolean")) {
+    return NextResponse.json({ error: "archive must be a boolean" }, { status: 400 });
+  }
   const archive = body.archive !== false;
 
   try {
@@ -93,9 +102,13 @@ export async function PUT(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  if (!isResourceId(id, 128)) return invalidId();
   const gmail = getGmailClient(session.accessToken);
-  const body = await req.json().catch(() => ({}));
-  const star: boolean = body.star ?? true;
+  const body = await readJsonObject(req, 1024);
+  if (!body || typeof body.star !== "boolean") {
+    return NextResponse.json({ error: "star must be a boolean" }, { status: 400 });
+  }
+  const star = body.star;
 
   try {
     await gmail.users.threads.modify({
@@ -120,6 +133,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  if (!isResourceId(id, 128)) return invalidId();
   const gmail = getGmailClient(session.accessToken);
 
   try {

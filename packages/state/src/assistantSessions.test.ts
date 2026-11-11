@@ -107,3 +107,17 @@ test("routes a delayed reply to its originating session", () => {
   assert.deepEqual(result[0].messages, [reply]);
   assert.deepEqual(result[1].messages, []);
 });
+
+test("caps sessions and messages in memory", async () => {
+  const { appendAssistantMessage, prependAssistantSession, MAX_ASSISTANT_SESSIONS, MAX_SESSION_MESSAGES } = await import("./assistantSessions.ts");
+  let sessions = Array.from({ length: MAX_ASSISTANT_SESSIONS }, (_, i) => ({ id: `s${i}`, title: "t", createdAt: "x", messages: [] }));
+  sessions = prependAssistantSession(sessions, { id: "new", title: "t", createdAt: "x", messages: [] });
+  assert.equal(sessions.length, MAX_ASSISTANT_SESSIONS);
+  assert.equal(sessions[0].id, "new");
+  assert.equal(sessions.at(-1)?.id, `s${MAX_ASSISTANT_SESSIONS - 2}`);
+  for (let i = 0; i < MAX_SESSION_MESSAGES + 5; i += 1) {
+    sessions = appendAssistantMessage(sessions, { id: `m${i}`, role: "user", content: "hi", timestamp: "x", sessionId: "new" });
+  }
+  assert.equal(sessions[0].messages.length, MAX_SESSION_MESSAGES);
+  assert.equal(sessions[0].messages[0].id, "m5");
+});

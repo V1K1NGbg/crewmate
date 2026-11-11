@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useApp, type AppConfigurationBackup } from "@crewmate/state";
+import { ApiError, apiErrorMessage, apiFetch, jsonRequest } from "@crewmate/lib";
 import type { Note } from "@crewmate/types";
 import { DEFAULT_NOTES_SETTINGS, type NotesPluginSettings } from "./settings";
 import { buildNotesDocument, parseNotesDocument } from "./documentContent";
@@ -25,6 +26,12 @@ export function docToAppNotes(
   ];
 }
 
+interface DocContentResponse {
+  content?: string;
+  revisionId?: string;
+  unsupportedStructure?: boolean;
+}
+
 export function useNotes() {
   const { state, dispatch, notify } = useApp();
   const [docId, setDocId] = useState<string | null>(null);
@@ -35,6 +42,8 @@ export function useNotes() {
   const [initError, setInitError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [conflict, setConflict] = useState(false);
+  /** The Google Doc holds tables/images/etc. that a Crewmate save will flatten. */
+  const [unsupportedStructure, setUnsupportedStructure] = useState(false);
   const docIdRef = useRef<string | null>(null);
   const contentRef = useRef(content);
   const dirtyRef = useRef(false);
@@ -53,19 +62,21 @@ export function useNotes() {
     setLoading(true);
     setInitError(null);
     try {
-      const res = await fetch("/api/docs/init", { method: "POST" });
-      const initData = await res.json();
-      if (!res.ok)
-        throw new Error(initData.error ?? "Failed to initialize document");
+      const initData = await apiFetch<{ documentId?: string; title?: string }>("/api/docs/init", {
+        method: "POST",
+        fallbackError: "Failed to initialize document",
+      });
+      if (typeof initData?.documentId !== "string" || !initData.documentId) {
+        throw new Error("Failed to initialize document");
+      }
       setDocId(initData.documentId);
       docIdRef.current = initData.documentId;
-      setDocTitle(initData.title);
-      const contentRes = await fetch(
+      setDocTitle(initData.title ?? "");
+      const contentData = await apiFetch<DocContentResponse>(
         `/api/docs/content?id=${encodeURIComponent(initData.documentId)}`,
+        { fallbackError: "Failed to load document content" },
       );
-      const contentData = await contentRes.json();
-      if (!contentRes.ok)
-        throw new Error(contentData.error ?? "Failed to load document content");
+      setUnsupportedStructure(contentData?.unsupportedStructure === true);
       const parsedDocument = parseNotesDocument(contentData.content ?? "");
       revisionIdRef.current = contentData.revisionId ?? null;
       contentRef.current = parsedDocument.body;
@@ -80,9 +91,7 @@ export function useNotes() {
         });
       }
     } catch (err: unknown) {
-      setInitError(
-        err instanceof Error ? err.message : "Failed to load Google Doc",
-      );
+      setInitError(apiErrorMessage(err, "Failed to load Google Doc"));
     } finally {
       setLoading(false);
     }
@@ -90,13 +99,20 @@ export function useNotes() {
 
   const refreshDoc = useCallback(async () => {
     const id = docIdRef.current;
-    if (!id || dirtyRef.current) return;
+    if (!id || dirtyRef.current || savePromiseRef.current) return;
+    const versionAtStart = changeVersionRef.current;
     try {
-      const res = await fetch(`/api/docs/content?id=${encodeURIComponent(id)}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      const parsedDocument = parseNotesDocument(data.content ?? "");
-      revisionIdRef.current = data.revisionId ?? revisionIdRef.current;
+      const data = await apiFetch<DocContentResponse>(`/api/docs/content?id=${encodeURIComponent(id)}`);
+      // Never let a refresh that started before the user typed replace newer local edits.
+      if (
+        docIdRef.current !== id ||
+        dirtyRef.current ||
+        savePromiseRef.current ||
+        changeVersionRef.current !== versionAtStart
+      ) return;
+      setUnsupportedStructure(data?.unsupportedStructure === true);
+      const parsedDocument = parseNotesDocument(data?.content ?? "");
+      revisionIdRef.current = data?.revisionId ?? revisionIdRef.current;
       contentRef.current = parsedDocument.body;
       setContent(parsedDocument.body);
     } catch {
@@ -118,30 +134,32 @@ export function useNotes() {
             contentRef.current,
             configurationRef.current,
           );
-          const res: Response = await fetch("/api/docs/content", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              id,
-              content: documentContent,
-              revisionId: revisionIdRef.current,
-            }),
-          });
-          const data: { error?: string; revisionId?: string } = await res.json().catch(() => ({}));
-          if (res.status === 409) {
-            setConflict(true);
-            notify("The note changed in Google Docs. Resolve the conflict before saving.", "error");
-            return;
+          let data: { revisionId?: string } | null;
+          try {
+            data = await apiFetch<{ revisionId?: string }>("/api/docs/content", {
+              ...jsonRequest("PUT", {
+                id,
+                content: documentContent,
+                revisionId: revisionIdRef.current,
+              }),
+              fallbackError: "Failed to save",
+            });
+          } catch (err: unknown) {
+            if (err instanceof ApiError && err.status === 409) {
+              setConflict(true);
+              notify("The note changed in Google Docs. Resolve the conflict before saving.", "error");
+              return;
+            }
+            throw err;
           }
-          if (!res.ok) throw new Error(data.error ?? "Failed to save");
-          revisionIdRef.current = data.revisionId ?? revisionIdRef.current;
+          revisionIdRef.current = data?.revisionId ?? revisionIdRef.current;
           if (changeVersionRef.current === versionAtStart) {
             dirtyRef.current = false;
             setDirty(false);
           }
         }
       } catch (err: unknown) {
-        notify(err instanceof Error ? err.message : "Save failed", "error");
+        notify(apiErrorMessage(err, "Save failed"), "error");
       } finally {
         setSaving(false);
       }
@@ -253,6 +271,7 @@ export function useNotes() {
     initError,
     dirty,
     conflict,
+    unsupportedStructure,
     initDoc,
     refreshDoc,
     saveDoc,

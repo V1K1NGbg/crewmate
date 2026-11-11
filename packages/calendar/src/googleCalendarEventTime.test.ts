@@ -5,6 +5,7 @@ import {
   instantToWallClock,
   isValidTimeZone,
   wallClockToInstant,
+  prefillHintToWallClock,
 } from "./googleCalendarEventTime.ts";
 
 test("interprets a wall-clock value in the configured timezone", () => {
@@ -49,4 +50,13 @@ test("keeps all-day events as date-only values", () => {
 test("rejects invalid timezone names", () => {
   assert.equal(isValidTimeZone("Europe/Amsterdam"), true);
   assert.equal(isValidTimeZone("Mars/Olympus"), false);
+});
+
+test("prefill hints keep wall-clock times and convert offset instants to the calendar timezone", () => {
+  assert.equal(prefillHintToWallClock("2026-07-29T09:00", "America/New_York"), "2026-07-29T09:00");
+  assert.equal(prefillHintToWallClock("2026-07-29 09:00:00", "Europe/Amsterdam"), "2026-07-29T09:00");
+  assert.equal(prefillHintToWallClock("2026-07-29T13:00:00Z", "America/New_York"), "2026-07-29T09:00");
+  assert.equal(prefillHintToWallClock("2026-07-29T15:00:00+02:00", "America/New_York"), "2026-07-29T09:00");
+  assert.equal(prefillHintToWallClock("next tuesday", "UTC"), null);
+  assert.equal(prefillHintToWallClock(undefined, "UTC"), null);
 });

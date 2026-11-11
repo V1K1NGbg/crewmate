@@ -16,8 +16,7 @@ export function isAuthError(err: unknown): boolean {
     msg.includes("invalid_grant") ||
     msg.includes("invalid credentials") ||
     msg.includes("request had invalid authentication") ||
-    msg.includes("unauthorized") ||
-    msg.includes("insufficientpermissions")
+    msg.includes("unauthorized")
   )
     return true;
 
@@ -61,4 +60,18 @@ export function mapGoogleApiError(err: unknown): PublicGoogleApiError {
   if (status === 403 && /read.?only/.test(message)) return { status: 403, code: "READ_ONLY_RESOURCE", message: "This Google resource is read-only", retryable: false };
   if (status === 403) return { status: 403, code: "INSUFFICIENT_SCOPE", message: "Google did not grant permission for this operation", retryable: false };
   return { status: status >= 500 ? status : 502, code: "PROVIDER_ERROR", message: "Google could not complete the request", retryable: status >= 500 };
+}
+
+/**
+ * True when a Google Docs `writeControl.requiredRevisionId` precondition failed,
+ * i.e. the document changed after the client loaded it.
+ */
+export function isRevisionConflict(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const value = err as Record<string, unknown>;
+  const response = value.response && typeof value.response === "object" ? value.response as Record<string, unknown> : {};
+  const status = Number(value.status ?? value.code ?? response.status);
+  if (status === 409) return true;
+  if (status !== 400) return false;
+  return /required ?revision|requiredRevisionId|revision id/i.test(String(value.message ?? ""));
 }

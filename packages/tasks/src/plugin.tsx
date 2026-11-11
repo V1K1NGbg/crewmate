@@ -6,7 +6,7 @@ import { DEFAULT_TASKS_SETTINGS, type TasksPluginSettings } from "./settings";
 function buildAssistantContext(data: unknown): string | null {
   const tasks = (data as Task[] | undefined) ?? [];
   if (tasks.length === 0) return null;
-  const pending = tasks.filter((t) => t.status !== "done").length;
+  const pending = tasks.filter((t) => t.status !== "completed").length;
   const lines: string[] = [`\n--- Tasks (${tasks.length}, ${pending} pending) ---`];
   for (const t of tasks.slice(0, 15)) {
     let entry = `• [id:${t.id}] [${t.status}] ${t.title} (${t.priority})`;

@@ -519,6 +519,7 @@ export default function AIAssistant() {
               disabled={loading}
             />
             <button
+              aria-label="Send message"
               onClick={sendMessage}
               disabled={loading || !input.trim()}
               className="w-8 h-8 flex items-center justify-center bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-40 transition-colors flex-shrink-0"

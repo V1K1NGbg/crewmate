@@ -125,24 +125,31 @@ packages/
 
 | Method | Route | Description |
 |---|---|---|
-| `GET` | `/api/gmail/threads` | List inbox threads (supports `q` query param) |
-| `GET` | `/api/gmail/thread/[id]` | Get full thread with all messages |
-| `PATCH` | `/api/gmail/thread/[id]` | Archive thread |
-| `PUT` | `/api/gmail/thread/[id]` | Toggle thread star |
-| `DELETE` | `/api/gmail/thread/[id]` | Trash thread |
-| `POST` | `/api/gmail/send` | Send/reply to an email |
-| `GET` | `/api/calendar/events` | List calendar events |
-| `POST` | `/api/calendar/events` | Create a new event |
-| `PATCH` | `/api/calendar/events/[id]` | Update an event |
-| `DELETE` | `/api/calendar/events/[id]` | Delete an event |
+| `GET`/`POST` | `/api/auth/[...nextauth]` | Auth.js sign-in, callback, and session endpoints. `/session` responses never include Google tokens |
+| `GET` | `/api/features` | Installed feature packages |
+| `GET` | `/api/gmail/threads` | List threads. Query: `q` (Gmail search, max 1024 chars), `limit` (1–50, default 20), `pageToken`. Returns `threads`, `nextPageToken`, `partialFailures` |
+| `GET` | `/api/gmail/thread/[id]` | Get full thread with all messages (includes RFC `messageId`) and mark it read |
+| `PATCH` | `/api/gmail/thread/[id]` | Archive thread; body `{ "archive": false }` returns it to the inbox |
+| `PUT` | `/api/gmail/thread/[id]` | Star or unstar; body `{ "star": boolean }` |
+| `DELETE` | `/api/gmail/thread/[id]` | Move thread to trash |
+| `POST` | `/api/gmail/send` | Send or reply. Body `to`, `subject`, `body`, optional `threadId`, `inReplyTo`, `references` |
+| `GET` | `/api/calendar/lists` | Calendars with `accessRole` and `writable` |
+| `GET` | `/api/calendar/events` | List events. Query: `timeMin`/`timeMax` (ISO), `calendarIds` (comma-separated, max 50). Returns `events` (each with `calendarId`) and `truncated` when a calendar exceeded 1,000 events |
+| `POST` | `/api/calendar/events` | Create an event; body includes `calendarId` |
+| `PATCH` | `/api/calendar/events/[id]` | Update an event; body must include `calendarId` |
+| `DELETE` | `/api/calendar/events/[id]?calendarId=` | Delete an event from its source calendar |
 | `POST` | `/api/docs/init` | Find or create "Crewmate Notes" Google Doc |
-| `GET` | `/api/docs/content` | Read Doc content |
-| `PUT` | `/api/docs/content` | Replace Doc content |
+| `GET` | `/api/docs/content` | Read Doc text, `revisionId`, and `unsupportedStructure` (tables/images that a save would flatten) |
+| `PUT` | `/api/docs/content` | Replace Doc content; requires `revisionId`, returns 409 `REVISION_CONFLICT` if the Doc changed |
 | `POST` | `/api/tasks/init` | Find or create "Crewmate Tasks" list |
 | `GET` | `/api/tasks/items` | List tasks in a list |
 | `POST` | `/api/tasks/items` | Create a task |
-| `PATCH` | `/api/tasks/items` | Update a task |
+| `PATCH` | `/api/tasks/items` | Update a task (`status` is `needsAction` or `completed`) |
 | `DELETE` | `/api/tasks/items` | Delete a task |
+
+Errors are JSON `{ error, code? }`. `code` is a stable value such as
+`AUTH_EXPIRED`, `INSUFFICIENT_SCOPE`, `RATE_LIMITED`, or `REVISION_CONFLICT`.
+Malformed or invalid input returns 400.
 
 ---
 

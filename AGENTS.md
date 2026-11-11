@@ -22,7 +22,7 @@ Run commands from the repository root.
 ```bash
 npm install          # install/link all workspaces
 npm run dev          # Next.js development server
-npm test             # all packages/*/src/*.test.ts tests
+npm test             # packages/*/src/*.test.ts and apps/web/src/lib/*.test.ts
 npm run lint         # app and all package source
 npm run typecheck    # strict TypeScript check
 npm run check        # lint + typecheck + tests
@@ -68,18 +68,28 @@ Cross-feature behavior goes through `featureData`, `pagePrefills`, or the
   Google client. Validate required path/query/body data and return 400 for invalid
   requests, 401 for authentication failures, and a useful non-2xx response for
   other failures.
-- Client fetches must check `response.ok` before consuming success data. Preserve
+- Client fetches to `/api/*` go through `apiFetch` from `@crewmate/lib`. It
+  checks `response.ok`, keeps the safe `code`, and throws `ApiError`. Use
+  `err.isAuthExpired` to show the re-authentication prompt, `isAbortError` to
+  ignore aborted requests, and `apiErrorMessage` for user-facing text. Preserve
   resource identity through every mutation layer (for example both event ID and
   calendar ID).
+- Route handlers parse bodies with `readJsonObject` / `readOptionalJsonObject`
+  and validate input with the pure helpers in
+  `apps/web/src/lib/requestValidation.ts`. Build Google request objects from
+  allowlisted fields. Return Google failures through `googleErrorResponse`, which
+  never returns raw provider messages.
 - Treat remote reads and writes as concurrent. Abort or ignore stale reads and do
   not let an older save mark a newer draft as clean.
 - Shared state updates are reducer actions. Add the action type and reducer case
   together; do not mutate state or nested arrays/objects in place.
 - `featureData` is transient fetched data. `pagePrefills` is a one-shot handoff
   and must be cleared after the destination consumes it.
-- Persisted state in `packages/state/src/index.tsx` is user data. When changing
-  its shape, tolerate old/malformed values and add an explicit migration or
-  normalization step.
+- Persisted state is user data. It is loaded after mount (`HYDRATE`) so server
+  and client markup match, and nothing is written before hydration completes.
+  When changing its shape, bump `PERSISTED_SCHEMA_VERSION` in
+  `packages/state/src/persistence.ts`, add a `MIGRATIONS[oldVersion]` step, and
+  test it in `persistence.test.ts`. Unknown or newer versions reset to defaults.
 - Feature settings live with their package in `settings.ts`; the host stores them
   generically under `pageSettings.features[plugin.id]`.
 - Prefer `@crewmate/*` public exports across packages. Use relative imports only
@@ -112,7 +122,10 @@ it for package discovery.
 ## Testing and review
 
 - Tests use Node's built-in `node:test` and `node:assert/strict` and are colocated
-  as `packages/<name>/src/*.test.ts`. The root test command discovers them.
+  as `packages/<name>/src/*.test.ts` (or `apps/web/src/lib/*.test.ts` for route
+  helpers). The root test command discovers them. Tested modules may only import
+  other local modules as types, or with an explicit `.ts` extension, because Node
+  runs them directly.
 - Test boundary behavior: malformed persisted/external data, non-OK responses,
   stale async completion, empty states, and resource identifiers.
 - Do not rely only on lint. Typecheck and tests catch different failures.

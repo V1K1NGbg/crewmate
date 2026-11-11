@@ -6,6 +6,7 @@ import {
   useEffect,
   useReducer,
   useRef,
+  useState,
   useCallback,
   type ReactNode,
   type Dispatch,
@@ -24,13 +25,23 @@ import {
   initializeAssistantSessions,
   removeAssistantSession,
   appendAssistantMessage,
+  prependAssistantSession,
+  MAX_ASSISTANT_SESSIONS,
+  MAX_SESSION_MESSAGES,
 } from "./assistantSessions";
 import {
   mergeAppConfiguration,
   normalizeFeaturePages,
-  normalizeComponentSpacing,
   type AppConfigurationBackup,
 } from "./configurationBackup";
+import {
+  DEFAULT_AI_SERVER_URL,
+  PERSISTED_SCHEMA_VERSION,
+  migratePageSettings,
+  normalizePanelWidths,
+  parsePersistedState,
+  type PersistedRecord,
+} from "./persistence";
 
 export type { AppConfigurationBackup } from "./configurationBackup";
 export { buildAssistantSessionMemory } from "./assistantSessions";
@@ -41,7 +52,8 @@ export { buildAssistantSessionMemory } from "./assistantSessions";
 
 const LEGACY_STORAGE_KEY = "crewmate-state";
 const STORAGE_PREFIX = "crewmate-state:";
-const STORAGE_SCHEMA_VERSION = 2;
+/** Owned by @crewmate/tasks (taskEmailContext.ts); keys are `<prefix><accountKey>:<taskId>`. */
+const TASK_EMAIL_STORAGE_PREFIX = "crewmate-task-email:";
 
 export interface AppState {
   pages: Page[];
@@ -63,11 +75,13 @@ export interface AppState {
   featureData: Record<string, unknown>;
   /** One-shot "prefill" payloads a feature can leave for another page to pick
    * up on mount (e.g. "create a calendar event from this email"), keyed by
-   * the target page id. */
+   * the target feature/plugin id (built-in features are singletons). */
   pagePrefills: Record<string, unknown>;
   environmentVault: EncryptedEnvironmentFile | null;
   /** High-entropy local secret. Deliberately excluded from the Notes backup. */
   environmentPassword: string;
+  /** Account whose persisted state has been loaded; `null` until hydration. */
+  hydratedAccountKey: string | null;
 }
 
 export type Action =
@@ -97,7 +111,9 @@ export type Action =
   | { type: "SET_FEATURE_ENABLED"; page: Page; enabled: boolean }
   | { type: "RESTORE_APP_CONFIGURATION"; backup: AppConfigurationBackup }
   | { type: "SET_ENVIRONMENT_VAULT"; vault: EncryptedEnvironmentFile | null }
-  | { type: "SET_ENVIRONMENT_PASSWORD"; password: string };
+  | { type: "SET_ENVIRONMENT_PASSWORD"; password: string }
+  /** Replaces persisted slices with what was loaded from storage after mount. */
+  | { type: "HYDRATE"; state: AppState; accountKey: string };
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -111,66 +127,58 @@ function storageKey(accountKey: string) {
   return `${STORAGE_PREFIX}${accountKey}`;
 }
 
-function loadPersisted(accountKey: string): Partial<AppState> {
-  if (typeof localStorage === "undefined") return {};
-  try {
-    const parsed = JSON.parse(localStorage.getItem(storageKey(accountKey)) ?? "{}") as Record<string, unknown>;
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
-    return parsed && typeof parsed === "object" ? parsed as Partial<AppState> : {};
-  } catch {
-    return {};
-  }
+interface InitialStateOptions {
+  initialInstalledFeatures?: FeaturePackageInfo[];
+  initialPages?: Page[];
+  initialFeatureSettings?: Record<string, unknown>;
 }
 
-function migratePageSettings(
-  saved: Partial<PageSettings> | undefined,
-  initialFeatureSettings: Record<string, unknown>,
-): PageSettings {
-  const savedGeneral = saved?.general;
-  const features = { ...initialFeatureSettings };
-  for (const [featureId, defaults] of Object.entries(initialFeatureSettings)) {
-    const persisted = saved?.features?.[featureId];
-    if (!persisted || typeof persisted !== "object" || Array.isArray(persisted)) continue;
-    const migrated = { ...(defaults as Record<string, unknown>), ...(persisted as Record<string, unknown>) };
-    if (featureId === "tasks") {
-      const oldFilter = migrated.defaultFilter;
-      migrated.defaultFilter = oldFilter === "done" ? "completed" : oldFilter === "pending" || oldFilter === "in-progress" ? "needsAction" : oldFilter;
-      const oldSort = migrated.sortBy;
-      migrated.sortBy = oldSort === "priority" ? "position" : oldSort === "createdAt" ? "updatedAt" : oldSort;
-    }
-    if (featureId === "mail") {
-      const limit = Number(migrated.maxThreads);
-      migrated.maxThreads = Number.isInteger(limit) && limit >= 1 && limit <= 50 ? limit : 20;
-      if (typeof migrated.defaultQuery !== "string") migrated.defaultQuery = "in:inbox";
-      const mainLanguage = typeof migrated.mainLanguage === "string" ? migrated.mainLanguage.trim().toLowerCase() : "";
-      const legacyLanguages: Record<string, string> = { english: "en", dutch: "nl", german: "de", french: "fr", spanish: "es", italian: "it", portuguese: "pt" };
-      migrated.mainLanguage = legacyLanguages[mainLanguage] ?? (mainLanguage || "en");
-      if (typeof migrated.autoTranslateForeignEmails !== "boolean") migrated.autoTranslateForeignEmails = true;
-      if (typeof migrated.allowAITranslationFallback !== "boolean") migrated.allowAITranslationFallback = false;
-    }
-    if (featureId === "calendar") {
-      const start = Number(migrated.startHour);
-      const end = Number(migrated.endHour);
-      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > 24 || start >= end) {
-        migrated.startHour = 8;
-        migrated.endHour = 20;
-      }
-    }
-    features[featureId] = migrated;
-  }
+/** Builds full app state from a migrated persisted payload (or `{}` for defaults). */
+function buildInitialState(saved: PersistedRecord, options: InitialStateOptions): AppState {
+  const installedFeatureIds = (options.initialInstalledFeatures ?? [])
+    .filter((feature) => feature.installed)
+    .map((feature) => feature.id);
+  const availableFeatureIds =
+    installedFeatureIds.length > 0
+      ? installedFeatureIds
+      : (options.initialPages ?? []).map((page) => page.type);
+  const pages = Array.isArray(saved.pages)
+    ? normalizeFeaturePages(saved.pages as Page[], availableFeatureIds)
+    : (options.initialPages ?? []);
+  const activePage =
+    typeof saved.activePage === "string" && pages.some((page) => page.id === saved.activePage)
+      ? saved.activePage
+      : (pages[0]?.id ?? "");
+
   return {
-    general: {
-      autoRefreshInterval: 0,
-      colorScheme: "default",
-      ...savedGeneral,
-      componentSpacing: normalizeComponentSpacing(
-        savedGeneral?.componentSpacing,
-      ),
-    },
-    features: {
-      ...features,
-    },
+    pages,
+    activePage,
+    aiServerUrl: typeof saved.aiServerUrl === "string" ? saved.aiServerUrl : DEFAULT_AI_SERVER_URL,
+    assistantModel: typeof saved.assistantModel === "string" ? saved.assistantModel : "",
+    aiOverlayOpen: false,
+    aiServerAvailable: false,
+    notification: null,
+    pageSettings: migratePageSettings(saved.pageSettings, options.initialFeatureSettings ?? {}),
+    ...initializeAssistantSessions(saved.assistantSessions, saved.activeSessionId),
+    panelWidths: normalizePanelWidths(saved.panelWidths),
+    installedFeatures: options.initialInstalledFeatures ?? [],
+    featureData: {},
+    pagePrefills: {},
+    environmentVault: (saved.environmentVault as EncryptedEnvironmentFile | null | undefined) ?? null,
+    environmentPassword: typeof saved.environmentPassword === "string" ? saved.environmentPassword : "",
+    hydratedAccountKey: null,
   };
+}
+
+function readPersistedState(accountKey: string): PersistedRecord {
+  try {
+    const saved = parsePersistedState(localStorage.getItem(storageKey(accountKey)));
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    return saved;
+  } catch {
+    // Storage can be unavailable (privacy mode, blocked site data).
+    return {};
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -272,7 +280,7 @@ function reducer(state: AppState, action: Action): AppState {
     case "CREATE_ASSISTANT_SESSION":
       return {
         ...state,
-        assistantSessions: [action.session, ...state.assistantSessions],
+        assistantSessions: prependAssistantSession(state.assistantSessions, action.session),
         activeSessionId: action.session.id,
       };
     case "DELETE_ASSISTANT_SESSION": {
@@ -331,6 +339,17 @@ function reducer(state: AppState, action: Action): AppState {
     case "SET_ENVIRONMENT_PASSWORD":
       return { ...state, environmentPassword: action.password };
 
+    case "HYDRATE":
+      return {
+        ...action.state,
+        // Transient, non-persisted slices that may already exist keep their values.
+        notification: state.notification,
+        aiServerAvailable: state.aiServerAvailable,
+        featureData: state.featureData,
+        pagePrefills: state.pagePrefills,
+        hydratedAccountKey: action.accountKey,
+      };
+
     default:
       return state;
   }
@@ -372,70 +391,21 @@ export function AppProvider({
   /** Stable opaque account namespace supplied by the authenticated host. */
   accountKey: string;
 }) {
-  const saved = typeof window !== "undefined" ? loadPersisted(accountKey) : {};
-  const legacySaved = saved as Partial<AppState> & { opencodeUrl?: string };
-  const currentAIServerUrl =
-    typeof saved.aiServerUrl === "string" ? saved.aiServerUrl : null;
-  const hasCurrentAISettings = currentAIServerUrl !== null;
-  const legacyAIServerUrl =
-    legacySaved.opencodeUrl &&
-    legacySaved.opencodeUrl !== "http://localhost:4096"
-      ? legacySaved.opencodeUrl
-      : null;
-  const savedAIServerUrl =
-    currentAIServerUrl ??
-    legacyAIServerUrl ??
-    "http://127.0.0.1:8080/v1";
-  const initialAssistantState = initializeAssistantSessions(
-    saved.assistantSessions,
-    saved.activeSessionId,
-  );
-  const installedFeatureIds = (initialInstalledFeatures ?? [])
-    .filter((feature) => feature.installed)
-    .map((feature) => feature.id);
-  const availableFeatureIds =
-    installedFeatureIds.length > 0
-      ? installedFeatureIds
-      : (initialPages ?? []).map((page) => page.type);
-  const persistedPages = Array.isArray(saved.pages)
-    ? normalizeFeaturePages(saved.pages, availableFeatureIds)
-    : (initialPages ?? []);
-  const persistedActivePage =
-    typeof saved.activePage === "string" &&
-    persistedPages.some((page) => page.id === saved.activePage)
-      ? saved.activePage
-      : (persistedPages[0]?.id ?? "");
+  // Server render and first client render both use defaults; persisted state
+  // is loaded after mount (HYDRATE) so markup never mismatches during hydration.
+  // Host-provided defaults are fixed for the provider's lifetime.
+  const [options] = useState<InitialStateOptions>(() => ({ initialInstalledFeatures, initialPages, initialFeatureSettings }));
+  const [state, dispatch] = useReducer(reducer, options, (initial) => buildInitialState({}, initial));
+  const hydrated = state.hydratedAccountKey === accountKey;
 
-  const [state, dispatch] = useReducer(reducer, {
-    pages: persistedPages,
-    activePage: persistedActivePage,
-    aiServerUrl: savedAIServerUrl,
-    assistantModel: hasCurrentAISettings
-      ? ((saved.assistantModel as string) ?? "")
-      : "",
-    aiOverlayOpen: false,
-    aiServerAvailable: false,
-    notification: null,
-    pageSettings: migratePageSettings(
-      saved.pageSettings as Partial<PageSettings> | undefined,
-      initialFeatureSettings ?? {},
-    ),
-    ...initialAssistantState,
-    panelWidths: (saved.panelWidths as Record<string, number>) ?? {},
-    installedFeatures: initialInstalledFeatures ?? [],
-    featureData: {},
-    pagePrefills: {},
-    environmentVault: saved.environmentVault ?? null,
-    environmentPassword:
-      typeof saved.environmentPassword === "string"
-        ? saved.environmentPassword
-        : "",
-  });
+  useEffect(() => {
+    dispatch({ type: "HYDRATE", state: buildInitialState(readPersistedState(accountKey), options), accountKey });
+  }, [accountKey, options]);
 
   const notifTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (state.environmentPassword) return;
+    if (!hydrated || state.environmentPassword) return;
     const bytes = crypto.getRandomValues(new Uint8Array(24));
     let binary = "";
     for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -446,7 +416,7 @@ export function AppProvider({
         .replace(/\//g, "_")
         .replace(/=+$/, ""),
     });
-  }, [state.environmentPassword]);
+  }, [hydrated, state.environmentPassword]);
 
   const notify = useCallback(
     (message: string, type: AppNotification["type"] = "info") => {
@@ -459,30 +429,35 @@ export function AppProvider({
   );
 
   const clearLocalData = useCallback((allAccounts = false) => {
-    if (allAccounts) {
+    const accountTaskPrefix = `${TASK_EMAIL_STORAGE_PREFIX}${accountKey}:`;
+    try {
       for (let index = localStorage.length - 1; index >= 0; index -= 1) {
         const key = localStorage.key(index);
-        if (key && (key.startsWith(STORAGE_PREFIX) || key === LEGACY_STORAGE_KEY || key.startsWith("crewmate-task-email:"))) {
-          localStorage.removeItem(key);
-        }
+        if (!key) continue;
+        const remove = allAccounts
+          ? key.startsWith(STORAGE_PREFIX) || key === LEGACY_STORAGE_KEY || key.startsWith(TASK_EMAIL_STORAGE_PREFIX)
+          : key === storageKey(accountKey) || key.startsWith(accountTaskPrefix);
+        if (remove) localStorage.removeItem(key);
       }
-    } else {
-      localStorage.removeItem(storageKey(accountKey));
+    } catch {
+      // Storage may be unavailable; reloading still drops in-memory state.
     }
     window.location.reload();
   }, [accountKey]);
 
   // Persist relevant slices to localStorage
   useEffect(() => {
+    // Never write defaults over saved data before the saved data has loaded.
+    if (!hydrated) return;
     try {
-      const assistantSessions = state.assistantSessions.slice(0, 25).map((session) => ({
+      const assistantSessions = state.assistantSessions.slice(0, MAX_ASSISTANT_SESSIONS).map((session) => ({
         ...session,
-        messages: session.messages.slice(-100),
+        messages: session.messages.slice(-MAX_SESSION_MESSAGES),
       }));
       localStorage.setItem(
         storageKey(accountKey),
         JSON.stringify({
-        schemaVersion: STORAGE_SCHEMA_VERSION,
+        schemaVersion: PERSISTED_SCHEMA_VERSION,
         pages: state.pages,
         activePage: state.activePage,
         aiServerUrl: state.aiServerUrl,
@@ -500,6 +475,7 @@ export function AppProvider({
     }
   }, [
     accountKey,
+    hydrated,
     state.pages,
     state.activePage,
     state.aiServerUrl,
@@ -524,7 +500,7 @@ export function AppProvider({
 
   return (
     <AppContext.Provider value={{ state, dispatch, notify, clearLocalData }}>
-      {children}
+      {hydrated ? children : <div className="h-dvh bg-bg" aria-busy="true" />}
     </AppContext.Provider>
   );
 }

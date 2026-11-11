@@ -3,6 +3,31 @@
 **Scope:** Repository state after integrating remote `master` commit `5321aa3` and porting the still-relevant local changes  
 **Audit mode:** Source inspection, integration validation, and dependency review
 
+## Remediation status (2026-11-10)
+
+This audit is a point-in-time document. Each finding was re-checked against the source. Status:
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | AI assistant first-run session | Fixed (`packages/state/src/assistantSessions.ts`, with tests) |
+| 2 | Secondary-calendar deletion | Fixed. Update also now requires `calendarId` (no `primary` fallback) |
+| 3 | Notes overwrite | Fixed: serialized saves, revision preconditions, refresh no longer overwrites typing, new revision taken from the write response. Docs with tables or images show a "will be flattened" warning (saving is still allowed, by decision) |
+| 4 | Calendar timezone | Fixed. AI/mail prefill hints now use the configured timezone too |
+| 5 | Stale async responses | Fixed for Gmail, Calendar, and the Notes refresh |
+| 6 | Settings with no effect | Fixed. Calendar visible hours and Mail default search now have controls. Task status uses Google's `needsAction`/`completed` everywhere |
+| 7 | Token exposure | Fixed. The `POST` `/session` (`update()`) response is now sanitized as well |
+| 8 | Local persistence | Fixed: per-account key, versioned migrations, post-mount hydration, in-memory caps, account-scoped clearing. Data is kept on sign-out (by decision). The vault password stays in per-account localStorage (by decision; session-only storage would make synced vaults impossible to unlock). The vault may later be replaced or removed |
+| 9 | API validation | Fixed: safe JSON parsing, ID/date/calendar-list validation, allowlisted event times, `References` chain validation |
+| 10 | Custom page iframes | Resolved: the feature was removed |
+| 11 | Gmail remote content | Fixed (CSP + opt-in). `<meta http-equiv>` and `<base>` are now stripped from email bodies |
+| 12 | Auth error classification | Fixed. `insufficientPermissions` is a scope error, and Gmail now shows the re-auth prompt via `apiFetch` |
+| 13 | Duplicate built-in pages | Resolved: built-ins are singletons |
+| 14 | Pagination and limits | Fixed |
+| 15 | Large components | Mostly done: Settings 761→151 lines, Tasks 892→~665, Calendar 2203→~1605, Mail 2221→~1920. Layout, form, panel, compose, and formatting logic extracted with tests. Calendar grid views and Mail thread list/AI sidebar remain |
+| 16 | Tests | Partial: 117 unit/route-helper tests. CI and Playwright wait on the deployment host |
+| 17 | Accessibility | Mostly fixed: dialogs, focus, labelled icon buttons, accessible switches |
+| 18 | Docs drift | Fixed: README API table, AGENTS.md, ARCHITECTURE.md |
+
 ## Executive summary
 
 Crewmate has a sound technical baseline:

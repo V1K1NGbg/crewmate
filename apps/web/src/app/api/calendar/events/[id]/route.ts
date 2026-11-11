@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getCalendarClient } from "@crewmate/lib/server";
 import { googleErrorResponse } from "@/lib/google-error-response";
 import { normalizeGoogleEventPatchBody } from "@crewmate/calendar/shared";
+import { parseEventDateTime, readJsonObject } from "@/lib/requestValidation";
 
 export async function DELETE(
   req: Request,
@@ -14,7 +15,7 @@ export async function DELETE(
 
   const { id } = await params;
   const calendarId = new URL(req.url).searchParams.get("calendarId")?.trim();
-  if (!id || !calendarId) {
+  if (!id || id.length > 1024 || !calendarId || calendarId.length > 256) {
     return NextResponse.json(
       { error: "A calendarId is required" },
       { status: 400 },
@@ -39,7 +40,8 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!id || id.length > 1024) return NextResponse.json({ error: "Invalid event id" }, { status: 400 });
+  const body = await readJsonObject(req, 100_000);
   if (!body || typeof body.calendarId !== "string" || !body.calendarId.trim()) {
     return NextResponse.json({ error: "calendarId is required" }, { status: 400 });
   }
@@ -48,8 +50,15 @@ export async function PATCH(
   if (typeof body.summary === "string" && body.summary.trim()) patch.summary = body.summary.slice(0, 1024);
   if (typeof body.description === "string") patch.description = body.description.slice(0, 20_000);
   if (typeof body.location === "string") patch.location = body.location.slice(0, 1024);
-  if (body.start && typeof body.start === "object") patch.start = body.start;
-  if (body.end && typeof body.end === "object") patch.end = body.end;
+  if (body.start !== undefined || body.end !== undefined) {
+    const start = parseEventDateTime(body.start);
+    const end = parseEventDateTime(body.end);
+    if (!start || !end || ("date" in start) !== ("date" in end)) {
+      return NextResponse.json({ error: "start and end must both be valid dates or date-times" }, { status: 400 });
+    }
+    patch.start = start;
+    patch.end = end;
+  }
   if (Object.keys(patch).length === 0) return NextResponse.json({ error: "No valid event fields supplied" }, { status: 400 });
   const calendar = getCalendarClient(session.accessToken);
 

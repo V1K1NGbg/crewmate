@@ -126,7 +126,8 @@ export interface SubTask {
   done: boolean;
 }
 
-export type TaskStatus = "pending" | "in-progress" | "done";
+/** Google Tasks status vocabulary, used everywhere tasks are shared. */
+export type TaskStatus = "needsAction" | "completed";
 export type TaskPriority = "low" | "medium" | "high";
 
 export interface Task {

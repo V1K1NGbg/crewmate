@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useApp } from "@crewmate/state";
+import { apiErrorMessage, apiFetch, jsonRequest } from "@crewmate/lib";
 import {
   saveTaskEmailContext,
   deleteTaskEmailContext,
@@ -36,7 +37,7 @@ export function googleTasksToAppTasks(items: GoogleTask[]): Task[] {
     id: t.id,
     title: t.title,
     description: t.notes,
-    status: t.status === "completed" ? "done" : "pending",
+    status: t.status === "completed" ? "completed" : "needsAction",
     priority: "medium" as const,
     dueDate: t.due,
     subtasks: (childrenMap.get(t.id) ?? []).map((s) => ({
@@ -67,23 +68,22 @@ export function useTasks(accountKey = "anonymous") {
     setLoading(true);
     setInitError(null);
     try {
-      const res = await fetch("/api/tasks/init", { method: "POST" });
-      const initData = await res.json();
-      if (!res.ok)
-        throw new Error(initData.error ?? "Failed to initialize task list");
+      const initData = await apiFetch<{ taskListId?: string }>("/api/tasks/init", {
+        method: "POST",
+        fallbackError: "Failed to initialize task list",
+      });
+      if (typeof initData?.taskListId !== "string" || !initData.taskListId) {
+        throw new Error("Failed to initialize task list");
+      }
       setListId(initData.taskListId);
       listIdRef.current = initData.taskListId;
-      const itemsRes = await fetch(
+      const itemsData = await apiFetch<{ items?: GoogleTask[] }>(
         `/api/tasks/items?listId=${encodeURIComponent(initData.taskListId)}`,
+        { fallbackError: "Failed to load tasks" },
       );
-      const itemsData = await itemsRes.json();
-      if (!itemsRes.ok)
-        throw new Error(itemsData.error ?? "Failed to load tasks");
-      setTasks(itemsData.items ?? []);
+      setTasks(Array.isArray(itemsData?.items) ? itemsData.items : []);
     } catch (err: unknown) {
-      setInitError(
-        err instanceof Error ? err.message : "Failed to load Google Tasks",
-      );
+      setInitError(apiErrorMessage(err, "Failed to load Google Tasks"));
     } finally {
       setLoading(false);
     }
@@ -93,16 +93,15 @@ export function useTasks(accountKey = "anonymous") {
     const id = listIdRef.current;
     if (!id) return;
     try {
-      const res = await fetch(
+      const data = await apiFetch<{ items?: GoogleTask[] }>(
         `/api/tasks/items?listId=${encodeURIComponent(id)}`,
       );
-      if (!res.ok) return;
-      const data = await res.json();
+      if (listIdRef.current !== id) return;
       const localParentMap = new Map(
         tasksRef.current.filter((t) => t.parent).map((t) => [t.id, t.parent!]),
       );
       setTasks(
-        (data.items ?? []).map((t: GoogleTask) => ({
+        (Array.isArray(data?.items) ? data.items : []).map((t: GoogleTask) => ({
           ...t,
           parent: t.parent ?? localParentMap.get(t.id),
         })),
@@ -122,25 +121,22 @@ export function useTasks(accountKey = "anonymous") {
       const id = listIdRef.current;
       if (!id || !title.trim()) return null;
       try {
-        const res = await fetch("/api/tasks/items", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        const { task } = await apiFetch<{ task: GoogleTask }>("/api/tasks/items", {
+          ...jsonRequest("POST", {
             listId: id,
             title: title.trim(),
             notes: notes || undefined,
             due: due || undefined,
           }),
+          fallbackError: "Failed to create task",
         });
-        if (!res.ok) throw new Error("Failed to create task");
-        const { task } = await res.json();
         setTasks((prev) => [task, ...prev]);
         if (task.id && emailContext)
           saveTaskEmailContext(accountKey, task.id, emailContext);
         notify("Task created", "success");
         return task.id ?? null;
       } catch (err: unknown) {
-        notify(err instanceof Error ? err.message : "Create failed", "error");
+        notify(apiErrorMessage(err, "Failed to create task"), "error");
         return null;
       }
     },
@@ -156,25 +152,19 @@ export function useTasks(accountKey = "anonymous") {
       const id = listIdRef.current;
       if (!id || !title.trim()) return false;
       try {
-        const res = await fetch("/api/tasks/items", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        const { task: newSubtask } = await apiFetch<{ task: GoogleTask }>("/api/tasks/items", {
+          ...jsonRequest("POST", {
             listId: id,
             title: title.trim(),
             parent: parentId,
           }),
+          fallbackError: "Failed to add subtask",
         });
-        if (!res.ok) throw new Error("Failed to create subtask");
-        const { task: newSubtask } = await res.json();
         setTasks((prev) => [newSubtask, ...prev]);
         if (!options?.silent) notify("Subtask added", "success");
         return true;
       } catch (err: unknown) {
-        notify(
-          err instanceof Error ? err.message : "Failed to add subtask",
-          "error",
-        );
+        notify(apiErrorMessage(err, "Failed to add subtask"), "error");
         return false;
       }
     },
@@ -220,38 +210,20 @@ export function useTasks(accountKey = "anonymous") {
       );
       try {
         if (parentTask) {
-          const parentRes = await fetch("/api/tasks/items", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              listId,
-              taskId: parentTask.id,
-              status: "needsAction",
-            }),
+          await apiFetch("/api/tasks/items", {
+            ...jsonRequest("PATCH", { listId, taskId: parentTask.id, status: "needsAction" }),
+            fallbackError: "Failed to update parent task",
           });
-          if (!parentRes.ok) throw new Error("Failed to update parent task");
         }
-        const res = await fetch("/api/tasks/items", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            listId,
-            taskId: task.id,
-            status: newStatus,
-          }),
+        await apiFetch("/api/tasks/items", {
+          ...jsonRequest("PATCH", { listId, taskId: task.id, status: newStatus }),
+          fallbackError: "Failed to update task",
         });
-        if (!res.ok) throw new Error("Failed to update task");
         if (parentToComplete) {
-          const parentRes = await fetch("/api/tasks/items", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              listId,
-              taskId: parentToComplete.id,
-              status: "completed",
-            }),
+          await apiFetch("/api/tasks/items", {
+            ...jsonRequest("PATCH", { listId, taskId: parentToComplete.id, status: "completed" }),
+            fallbackError: "Failed to complete parent task",
           });
-          if (!parentRes.ok) throw new Error("Failed to complete parent task");
         }
         await refreshTasks();
       } catch (err: unknown) {
@@ -265,7 +237,7 @@ export function useTasks(accountKey = "anonymous") {
             return t;
           }),
         );
-        notify(err instanceof Error ? err.message : "Update failed", "error");
+        notify(apiErrorMessage(err, "Failed to update task"), "error");
       }
     },
     [notify, refreshTasks],
@@ -276,18 +248,17 @@ export function useTasks(accountKey = "anonymous") {
       const listId = listIdRef.current;
       if (!listId) return;
       try {
-        const res = await fetch(
+        await apiFetch(
           `/api/tasks/items?listId=${encodeURIComponent(listId)}&taskId=${encodeURIComponent(taskId)}`,
-          { method: "DELETE" },
+          { method: "DELETE", fallbackError: "Failed to delete task" },
         );
-        if (!res.ok) throw new Error("Failed to delete task");
         deleteTaskEmailContext(accountKey, taskId);
         setTasks((prev) =>
           prev.filter((t) => t.id !== taskId && t.parent !== taskId),
         );
         notify("Task deleted", "info");
       } catch (err: unknown) {
-        notify(err instanceof Error ? err.message : "Delete failed", "error");
+        notify(apiErrorMessage(err, "Failed to delete task"), "error");
       }
     },
     [accountKey, notify],
@@ -298,17 +269,15 @@ export function useTasks(accountKey = "anonymous") {
       const listId = listIdRef.current;
       if (!listId) return false;
       try {
-        const res = await fetch("/api/tasks/items", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ listId, taskId, ...patch }),
+        await apiFetch("/api/tasks/items", {
+          ...jsonRequest("PATCH", { listId, taskId, ...patch }),
+          fallbackError: "Failed to update task",
         });
-        if (!res.ok) throw new Error("Failed to update task");
         await refreshTasks();
         notify("Task updated", "success");
         return true;
       } catch (err: unknown) {
-        notify(err instanceof Error ? err.message : "Update failed", "error");
+        notify(apiErrorMessage(err, "Failed to update task"), "error");
         return false;
       }
     },

@@ -15,6 +15,43 @@ const KEYBINDS = [
   ["Apply only", "reviewApplyOnlyKey"],
 ] as const;
 
+const MAX_QUERY_LENGTH = 1024;
+
+/** Gmail search applied when the inbox opens; committed on blur/Enter so typing doesn't refetch. */
+function DefaultQuerySetting({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit: (query: string) => void;
+}) {
+  const [draft, setDraft] = useState(value || "in:inbox");
+  const commit = () => {
+    const next = draft.trim().slice(0, MAX_QUERY_LENGTH) || "in:inbox";
+    setDraft(next);
+    if (next !== value) onCommit(next);
+  };
+  return (
+    <SettingRow
+      label="Default search"
+      description="Gmail search used when the inbox opens, for example in:inbox or is:unread in:inbox."
+    >
+      <input
+        className="settings-input"
+        aria-label="Default Gmail search"
+        value={draft}
+        maxLength={MAX_QUERY_LENGTH}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+        }}
+        placeholder="in:inbox"
+      />
+    </SettingRow>
+  );
+}
+
 export default function GmailSettingsSection({
   settings,
   onChange,
@@ -32,6 +69,11 @@ export default function GmailSettingsSection({
           <option value={50}>50</option>
         </select>
       </SettingRow>
+
+      <DefaultQuerySetting
+        value={settings.defaultQuery}
+        onCommit={(defaultQuery) => onChange({ defaultQuery })}
+      />
 
       <SettingRow
         label="Primary language"

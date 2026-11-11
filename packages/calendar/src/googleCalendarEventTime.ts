@@ -88,6 +88,28 @@ export function instantToWallClock(value: string, timeZone: string): string {
   return formatInTimeZone(instant, timeZone, "yyyy-MM-dd'T'HH:mm");
 }
 
+/**
+ * Converts an AI/mail prefill hint to a `datetime-local` value in the
+ * calendar's configured timezone. Hints with an explicit offset (`Z`,
+ * `+02:00`) are instants and are converted; hints without one are already
+ * wall-clock times and are kept as written. Returns null for unusable hints.
+ */
+export function prefillHintToWallClock(hint: string | undefined, timeZone: string): string | null {
+  const value = hint?.trim();
+  if (!value) return null;
+  const wallClock = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(:\d{2}(\.\d+)?)?$/.exec(value);
+  if (wallClock) {
+    const candidate = `${wallClock[1]}T${wallClock[2]}`;
+    return Number.isNaN(parseISO(candidate).getTime()) ? null : candidate;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}T.*(Z|[+-]\d{2}:?\d{2})$/i.test(value)) return null;
+  try {
+    return instantToWallClock(value, timeZone);
+  } catch {
+    return null;
+  }
+}
+
 export function formatInstantInTimeZone(
   value: string | Date,
   timeZone: string,

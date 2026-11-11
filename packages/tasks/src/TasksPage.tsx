@@ -25,6 +25,8 @@ import {
   googleTasksToAppTasks,
   type GoogleTask,
 } from "./useTasks";
+import { buildTaskTree, countTasks } from "./taskTree";
+import { AddSubtaskForm, ConfirmDeleteTaskDialog, SubtaskRow, TaskCheckbox } from "./TaskListParts";
 import { getTaskEmailContext } from "./taskEmailContext";
 import { DEFAULT_TASKS_SETTINGS, type TasksPluginSettings } from "./settings";
 
@@ -129,6 +131,11 @@ export default function TasksPage() {
     setNewNotes("");
     setNewDue("");
     setShowNewForm(false);
+  }
+
+  function cancelAddingSubtask() {
+    setAddingSubtaskTo(null);
+    setNewSubtaskTitle("");
   }
 
   async function handleAddSubtask() {
@@ -247,52 +254,10 @@ export default function TasksPage() {
     return f === "all" ? "All" : f === "needsAction" ? "Pending" : "Done";
   }
   function filterCount(f: FilterType) {
-    return f === "all"
-      ? tasks.length
-      : tasks.filter((t) => t.status === f).length;
+    return countTasks(tasks, f);
   }
 
-  // Build task tree — when a filter is active, include parent tasks of matching
-  // subtasks even if the parent itself doesn't match the filter, so subtasks
-  // are never orphaned/invisible.
-  const directlyFiltered =
-    filter === "all" ? tasks : tasks.filter((t) => t.status === filter);
-
-  // Collect parent IDs that need to be shown even if they don't match filter
-  const parentIdsNeeded = new Set<string>();
-  for (const t of directlyFiltered) {
-    if (t.parent) parentIdsNeeded.add(t.parent);
-  }
-  const filtered = [
-    ...directlyFiltered,
-    ...tasks.filter(
-      (t) => parentIdsNeeded.has(t.id) && !directlyFiltered.includes(t),
-    ),
-  ];
-
-  const compareTasks = (a: GoogleTask, b: GoogleTask) => {
-    if (tasksSettings.sortBy === "dueDate") {
-      return (a.due ?? "9999").localeCompare(b.due ?? "9999") || (a.position ?? "").localeCompare(b.position ?? "");
-    }
-    if (tasksSettings.sortBy === "updatedAt") {
-      return (b.updated ?? "").localeCompare(a.updated ?? "") || (a.position ?? "").localeCompare(b.position ?? "");
-    }
-    return (a.position ?? "").localeCompare(b.position ?? "");
-  };
-
-  const childrenMap = new Map<string, GoogleTask[]>();
-  const topLevel: GoogleTask[] = [];
-  for (const t of filtered) {
-    if (t.parent) {
-      const list = childrenMap.get(t.parent) ?? [];
-      list.push(t);
-      childrenMap.set(t.parent, list);
-    } else {
-      topLevel.push(t);
-    }
-  }
-  topLevel.sort(compareTasks);
-  for (const children of childrenMap.values()) children.sort(compareTasks);
+  const { topLevel, childrenByParent: childrenMap } = buildTaskTree(tasks, filter, tasksSettings.sortBy);
 
   if (sessionStatus !== "authenticated" || session?.googleAuthStatus !== "ready" || initError) {
     const isUnauthorized =
@@ -390,6 +355,7 @@ export default function TasksPage() {
             </a>
           )}
           <button
+            aria-label="Refresh"
             onClick={refreshTasks}
             className="w-8 h-8 flex items-center justify-center text-text-2 hover:text-text hover:bg-surface rounded-lg transition-colors"
             title="Refresh"
@@ -472,31 +438,12 @@ export default function TasksPage() {
               }`}
             >
               <div className="flex items-start gap-3 px-4 py-3.5">
-                <button
-                  onClick={() => toggleStatus(task)}
-                  className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all mt-0.5 ${
-                    done ? "bg-accent border-accent" : "border-text-3"
-                  }`}
-                  title={`Status: ${task.status}`}
-                >
-                  {done && (
-                    <svg
-                      width="10"
-                      height="10"
-                      viewBox="0 0 10 10"
-                      fill="none"
-                      className="text-white"
-                    >
-                      <path
-                        d="M2 5l2.5 2.5 5-5"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
-                </button>
+                <TaskCheckbox
+                  checked={done}
+                  onToggle={() => toggleStatus(task)}
+                  label={`Mark "${task.title}" ${done ? "not done" : "done"}`}
+                  className="mt-0.5"
+                />
                 <div className="flex-1 min-w-0">
                   {isEditing ? (
                     <div className="flex flex-col gap-2">
@@ -579,6 +526,7 @@ export default function TasksPage() {
                 {!isEditing && (
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     <button
+                      aria-label="Edit task"
                       onClick={() => startEditing(task)}
                       className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-accent hover:bg-accent/10 rounded-lg transition-colors"
                       title="Edit task"
@@ -586,6 +534,7 @@ export default function TasksPage() {
                       <Pencil size={13} />
                     </button>
                     <button
+                      aria-label="Add to calendar"
                       onClick={() => handleAddToCalendar(task)}
                       className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-success hover:bg-success/10 rounded-lg transition-colors"
                       title="Add to calendar"
@@ -606,6 +555,7 @@ export default function TasksPage() {
                       Break down
                     </button>
                     <button
+                      aria-label="Delete task"
                       onClick={() => setConfirmDeleteId(task.id)}
                       className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-danger hover:bg-danger/10 rounded-lg transition-colors"
                       title="Delete task"
@@ -619,142 +569,29 @@ export default function TasksPage() {
               <div className="border-t border-border/50">
                 {subtasks.length > 0 ? (
                   <>
-                    {subtasks.map((sub) => {
-                      const subDone = sub.status === "completed";
-                      return (
-                        <div
-                          key={sub.id}
-                          className="flex items-center gap-3 pl-12 pr-4 py-2 hover:bg-bg/40 transition-colors"
-                        >
-                          <button
-                            onClick={() => toggleStatus(sub)}
-                            className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
-                              subDone
-                                ? "bg-accent border-accent"
-                                : "border-border-2"
-                            }`}
-                          >
-                            {subDone && (
-                              <svg
-                                width="10"
-                                height="10"
-                                viewBox="0 0 10 10"
-                                fill="none"
-                                className="text-white"
-                              >
-                                <path
-                                  d="M2 5l2.5 2.5 5-5"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                />
-                              </svg>
-                            )}
-                          </button>
-                          {editingSubtaskId === sub.id ? (
-                            <div className="flex-1 flex items-center gap-2">
-                              <input
-                                autoFocus
-                                className="flex-1 bg-bg border border-accent rounded-lg px-2 py-1 text-sm text-text outline-none"
-                                value={editSubtaskTitle}
-                                onChange={(e) =>
-                                  setEditSubtaskTitle(e.target.value)
-                                }
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter")
-                                    saveEditingSubtask(sub);
-                                  if (e.key === "Escape")
-                                    cancelEditingSubtask();
-                                }}
-                              />
-                              <button
-                                onClick={() => saveEditingSubtask(sub)}
-                                disabled={!editSubtaskTitle.trim()}
-                                style={{ padding: "2px 8px" }}
-                                className="text-xs font-semibold text-white bg-accent rounded hover:bg-accent-hover disabled:opacity-40"
-                              >
-                                Save
-                              </button>
-                              <button
-                                onClick={cancelEditingSubtask}
-                                style={{ padding: "2px 8px" }}
-                                className="text-xs font-medium text-text-2 border border-border-2 rounded hover:text-text hover:bg-surface-2"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              <span
-                                className={`flex-1 text-sm truncate ${subDone ? "line-through text-text-3" : "text-text"}`}
-                              >
-                                {sub.title}
-                              </span>
-                              {sub.due && (
-                                <span className="flex items-center gap-1 text-xs text-text-3 flex-shrink-0">
-                                  <Clock size={11} />
-                                  {format(new Date(sub.due), "MMM d")}
-                                </span>
-                              )}
-                              <div className="flex items-center gap-1.5 flex-shrink-0">
-                                <button
-                                  onClick={() => startEditingSubtask(sub)}
-                                  className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-accent hover:bg-accent/10 rounded-lg transition-colors"
-                                  title="Edit subtask"
-                                >
-                                  <Pencil size={13} />
-                                </button>
-                                <button
-                                  onClick={() => setConfirmDeleteId(sub.id)}
-                                  className="w-8 h-8 flex items-center justify-center text-text-3 hover:text-danger hover:bg-danger/10 rounded-lg transition-colors"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {subtasks.map((sub) => (
+                      <SubtaskRow
+                        key={sub.id}
+                        subtask={sub}
+                        editing={editingSubtaskId === sub.id}
+                        editTitle={editSubtaskTitle}
+                        onEditTitleChange={setEditSubtaskTitle}
+                        onStartEdit={() => startEditingSubtask(sub)}
+                        onSave={() => saveEditingSubtask(sub)}
+                        onCancel={cancelEditingSubtask}
+                        onToggle={() => toggleStatus(sub)}
+                        onDelete={() => setConfirmDeleteId(sub.id)}
+                      />
+                    ))}
 
                     {/* Add subtask form */}
                     {addingSubtaskTo === task.id ? (
-                      <div className="flex items-center gap-2 pl-12 pr-4 py-2">
-                        <div className="w-6 h-6 flex-shrink-0" />
-                        <input
-                          autoFocus
-                          className="flex-1 bg-bg border border-border-2 rounded-lg px-3 py-1.5 text-sm text-text outline-none focus:border-accent"
-                          placeholder="Subtask title..."
-                          value={newSubtaskTitle}
-                          onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleAddSubtask();
-                            if (e.key === "Escape") {
-                              setAddingSubtaskTo(null);
-                              setNewSubtaskTitle("");
-                            }
-                          }}
-                        />
-                        <button
-                          onClick={handleAddSubtask}
-                          disabled={!newSubtaskTitle.trim()}
-                          style={{ padding: "2px 12px" }}
-                          className="text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-40"
-                        >
-                          Add
-                        </button>
-                        <button
-                          onClick={() => {
-                            setAddingSubtaskTo(null);
-                            setNewSubtaskTitle("");
-                          }}
-                          style={{ padding: "2px 10px" }}
-                          className="text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:text-text hover:bg-surface-2 transition-all"
-                        >
-                          Cancel
-                        </button>
-                      </div>
+                      <AddSubtaskForm
+                        value={newSubtaskTitle}
+                        onChange={setNewSubtaskTitle}
+                        onSubmit={handleAddSubtask}
+                        onCancel={cancelAddingSubtask}
+                      />
                     ) : (
                       <button
                         onClick={() => setAddingSubtaskTo(task.id)}
@@ -769,41 +606,12 @@ export default function TasksPage() {
                   /* No subtasks yet */
                   <>
                     {addingSubtaskTo === task.id ? (
-                      <div className="flex items-center gap-2 pl-12 pr-4 py-2">
-                        <div className="w-6 h-6 flex-shrink-0" />
-                        <input
-                          autoFocus
-                          className="flex-1 bg-bg border border-border-2 rounded-lg px-3 py-1.5 text-sm text-text outline-none focus:border-accent"
-                          placeholder="Subtask title..."
-                          value={newSubtaskTitle}
-                          onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleAddSubtask();
-                            if (e.key === "Escape") {
-                              setAddingSubtaskTo(null);
-                              setNewSubtaskTitle("");
-                            }
-                          }}
-                        />
-                        <button
-                          onClick={handleAddSubtask}
-                          disabled={!newSubtaskTitle.trim()}
-                          style={{ padding: "2px 12px" }}
-                          className="text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-40"
-                        >
-                          Add
-                        </button>
-                        <button
-                          onClick={() => {
-                            setAddingSubtaskTo(null);
-                            setNewSubtaskTitle("");
-                          }}
-                          style={{ padding: "2px 10px" }}
-                          className="text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:text-text hover:bg-surface-2 transition-all"
-                        >
-                          Cancel
-                        </button>
-                      </div>
+                      <AddSubtaskForm
+                        value={newSubtaskTitle}
+                        onChange={setNewSubtaskTitle}
+                        onSubmit={handleAddSubtask}
+                        onCancel={cancelAddingSubtask}
+                      />
                     ) : (
                       <div className="pl-12 pr-4 py-3 text-xs text-text-3 flex items-center gap-2">
                         <span>No subtasks.</span>
@@ -844,49 +652,14 @@ export default function TasksPage() {
       </div>
 
       {/* Confirm delete dialog */}
-      {confirmDeleteId !== null && (
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setConfirmDeleteId(null)}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="delete-task-title"
-        >
-          <div
-            ref={deleteDialogRef}
-            tabIndex={-1}
-            className="bg-surface border border-border-2 rounded-xl w-full max-w-sm shadow-2xl flex flex-col gap-4"
-            style={{ padding: "20px" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex flex-col gap-1">
-              <h3 id="delete-task-title" className="text-sm font-semibold text-text">Delete task?</h3>
-              <p className="text-sm text-text-2 leading-relaxed">
-                This task will be permanently removed from Google Tasks.
-              </p>
-            </div>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setConfirmDeleteId(null)}
-                style={{ padding: "2px 12px" }}
-                className="text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:text-text hover:bg-surface-2 transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  deleteTask(confirmDeleteId);
-                  setConfirmDeleteId(null);
-                }}
-                style={{ padding: "2px 12px" }}
-                className="text-sm font-semibold text-white bg-danger rounded-lg hover:bg-red-600 transition-all"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        <ConfirmDeleteTaskDialog
+          dialogRef={deleteDialogRef}
+          onCancel={() => setConfirmDeleteId(null)}
+          onConfirm={() => {
+            if (confirmDeleteId) void deleteTask(confirmDeleteId);
+            setConfirmDeleteId(null);
+          }}
+        />
     </div>
   );
 }

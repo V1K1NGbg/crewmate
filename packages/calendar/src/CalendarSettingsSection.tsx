@@ -8,6 +8,12 @@ import type { CalendarPluginSettings, GoogleCalendarList } from "./settings";
 import { isCalendarEnabled, toggleEnabledCalendarId } from "./calendarSettings";
 import { isValidTimeZone } from "./googleCalendarEventTime";
 
+const HOURS = Array.from({ length: 25 }, (_, hour) => hour);
+
+function formatHour(hour: number): string {
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
 export default function CalendarSettingsSection({
   settings,
   onChange,
@@ -76,6 +82,35 @@ export default function CalendarSettingsSection({
         checked={settings.showDeclined}
         onChange={() => onChange({ showDeclined: !settings.showDeclined })}
       />
+      <SettingRow
+        label="Visible hours"
+        description="Hours shown in the week view. Events outside this range are still listed."
+      >
+        <div className="flex items-center gap-2">
+          <select
+            className="settings-select"
+            aria-label="First visible hour"
+            value={settings.startHour}
+            onChange={(e) => onChange({ startHour: Number(e.target.value) })}
+          >
+            {HOURS.filter((hour) => hour < 24 && hour < settings.endHour).map((hour) => (
+              <option key={hour} value={hour}>{formatHour(hour)}</option>
+            ))}
+          </select>
+          <span className="text-sm text-text-3">to</span>
+          <select
+            className="settings-select"
+            aria-label="Last visible hour"
+            value={settings.endHour}
+            onChange={(e) => onChange({ endHour: Number(e.target.value) })}
+          >
+            {HOURS.filter((hour) => hour > 0 && hour > settings.startHour).map((hour) => (
+              <option key={hour} value={hour}>{formatHour(hour)}</option>
+            ))}
+          </select>
+        </div>
+      </SettingRow>
+
       <SettingToggle
         label="24-hour time"
         checked={settings.use24HourTime ?? false}

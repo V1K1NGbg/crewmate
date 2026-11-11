@@ -49,6 +49,15 @@ into three groups:
 - transient UI state: overlays, notifications, and AI server availability;
 - integration state: `featureData` caches and `pagePrefills` handoffs.
 
+Persisted preferences live under `crewmate-state:<accountKey>` with a
+`schemaVersion`. The provider renders defaults on the server and the first client
+pass, then loads and migrates saved state after mount (`HYDRATE`, see
+`packages/state/src/persistence.ts`). Children render only once hydration is
+done, and persistence writes are suppressed until then. Assistant history is
+capped at 25 sessions × 100 messages in memory and on disk. Signing out keeps an
+account's local data; Settings → Local data deletes it, together with the
+account's task email snippets.
+
 Feature hooks publish fetched models to `featureData[pluginId]`. The assistant
 asks each plugin to turn that data into context, so the state package never needs
 feature-specific types. To initiate work in another feature, a source dispatches
@@ -79,6 +88,11 @@ feature component -> feature hook -> /api route -> Google client -> Google API
                                       |
                                       +-> auth/session validation
 ```
+
+Hooks call routes through `apiFetch` (`@crewmate/lib`). A 401 or `AUTH_EXPIRED`
+response becomes `ApiError.isAuthExpired`, which each feature uses to show its
+sign-in prompt. Permission (403), quota, and conflict errors keep their own codes
+so they are never mistaken for an expired session.
 
 Browser code never imports Google clients. Route handlers obtain the access token
 from NextAuth and construct server-only clients through `@crewmate/lib/server`.
@@ -118,16 +132,30 @@ from the Notes backup. The PIN and plaintext are never persisted.
 | Runtime feature composition | `apps/web/src/plugins/registry.ts` |
 | Google client creation | `packages/lib/src/google.ts` |
 | Auth/token refresh | `apps/web/src/auth.ts` |
+| Browser-visible session sanitizing | `apps/web/src/app/api/auth/[...nextauth]/route.ts` |
+| Persisted-state schema and migrations | `packages/state/src/persistence.ts` |
+| Client API fetch/error contract | `packages/lib/src/apiFetch.ts` |
+| Route input validation | `apps/web/src/lib/requestValidation.ts` |
+| Provider error mapping | `packages/lib/src/googleApiError.ts` |
 | Theme tokens | `apps/web/src/app/globals.css` |
 | Authenticated-app spacing density | `.crewmate-app` rules in `apps/web/src/app/globals.css` |
 | Verification commands | root `package.json` |
 
 ## Known structural pressure points
 
-The Calendar, Mail, and Tasks page components are large and combine rendering,
-dialog state, and orchestration. When changing them, extract cohesive pure logic
-or leaf UI instead of growing the page further. Preserve behavior with focused
-tests before moving logic.
+The Calendar, Mail, and Tasks page components are still large and combine
+rendering, dialog state, and orchestration. When changing them, extract cohesive
+pure logic or leaf UI instead of growing the page further, and add focused tests
+before moving logic. Already extracted:
+
+- Calendar: `eventLayout.ts` (overlap and spanning layout), `EventFormFields.tsx`
+  (shared create/edit fields), `CalendarSidePanels.tsx` (details and import
+  panels). The month and week grid JSX is the next candidate.
+- Mail: `suggestedActions.ts` (AI action validation and ordering), `mailFormat.ts`,
+  `emailHtml.ts`, `actionStyles.tsx`, `MailViews.tsx` (email body, status views,
+  compose dialog). The thread list and AI sidebar are the next candidates.
+- Tasks: `taskTree.ts` (filter, sort, tree) and `TaskListParts.tsx`.
+- Settings: one component per section under `apps/web/src/components/settings/`.
 
 Remote hooks manage mutable external data and are sensitive to overlapping
 requests. New fetch behavior should define what happens when requests finish out

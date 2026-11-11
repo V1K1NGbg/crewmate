@@ -5,6 +5,7 @@ import {
   getGmailHeader,
 } from "@crewmate/lib/server";
 import { googleErrorResponse } from "@/lib/google-error-response";
+import { MAX_GMAIL_QUERY_LENGTH } from "@/lib/requestValidation";
 
 export async function GET(req: Request) {
   const session = await auth();
@@ -14,6 +15,12 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const pageToken = searchParams.get("pageToken") ?? undefined;
   const q = searchParams.get("q") ?? "in:inbox";
+  if (q.length > MAX_GMAIL_QUERY_LENGTH) {
+    return NextResponse.json({ error: "Search query is too long" }, { status: 400 });
+  }
+  if (pageToken !== undefined && (pageToken.length > 512 || /\s/.test(pageToken))) {
+    return NextResponse.json({ error: "Invalid pageToken" }, { status: 400 });
+  }
   const requestedLimit = Number(searchParams.get("limit") ?? 20);
   if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 50) {
     return NextResponse.json({ error: "limit must be an integer from 1 to 50" }, { status: 400 });

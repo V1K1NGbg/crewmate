@@ -19,15 +19,21 @@ export async function POST(req: Request) {
   const { to, subject, body } = payload;
   const threadId = typeof payload.threadId === "string" ? payload.threadId : undefined;
   const inReplyTo = typeof payload.inReplyTo === "string" ? payload.inReplyTo : undefined;
+  const references = typeof payload.references === "string" ? payload.references : undefined;
 
   const gmail = getGmailClient(session.accessToken);
 
-  const profile = await gmail.users.getProfile({ userId: "me" });
-  const from = profile.data.emailAddress ?? "";
+  let from: string;
+  try {
+    const profile = await gmail.users.getProfile({ userId: "me" });
+    from = profile.data.emailAddress ?? "";
+  } catch (err: unknown) {
+    return googleErrorResponse(err, "gmail/send getProfile");
+  }
 
   let raw: string;
   try {
-    raw = buildRawEmail({ from, to, subject, body, inReplyTo });
+    raw = buildRawEmail({ from, to, subject, body, inReplyTo, references });
   } catch (error: unknown) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Invalid email" },

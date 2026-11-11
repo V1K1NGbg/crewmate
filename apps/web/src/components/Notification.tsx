@@ -40,6 +40,7 @@ export default function Notification() {
             <styles.Icon size={15} />
             <span>{message}</span>
             <button
+              aria-label="Dismiss notification"
                 onClick={() =>
                     dispatch({ type: "SET_NOTIFICATION", notification: null })
                 }

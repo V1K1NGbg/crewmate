@@ -90,6 +90,7 @@ export default function NotesPage() {
     initError,
     dirty,
     conflict,
+    unsupportedStructure,
     initDoc,
     refreshDoc,
     saveDoc,
@@ -343,6 +344,16 @@ export default function NotesPage() {
           </div>
         </div>
       )}
+      {unsupportedStructure && (
+        <div
+          role="status"
+          className="flex-shrink-0 border-b border-warning/30 bg-warning/10 px-6 py-2 text-xs text-warning"
+        >
+          This Google Doc contains tables, images, or other formatting that Crewmate
+          cannot display. Saving from Crewmate will flatten it to plain text — edit it
+          in Google Docs to keep that structure.
+        </div>
+      )}
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-6 py-3 border-b border-border bg-bg flex-shrink-0">
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -423,6 +434,7 @@ export default function NotesPage() {
             Summarize
           </button>
           <button
+            aria-label="Refresh from Google Docs"
             onClick={refreshDoc}
             className="w-8 h-8 flex items-center justify-center text-text-2 border border-border-2 rounded-lg hover:border-accent hover:text-accent transition-all"
             title="Refresh from Google Docs"
@@ -430,6 +442,7 @@ export default function NotesPage() {
             <RefreshCw size={13} />
           </button>
           <button
+            aria-label="Save now"
             onClick={saveDoc}
             disabled={saving}
             className="w-8 h-8 flex items-center justify-center text-text-2 border border-border-2 rounded-lg hover:border-success hover:text-success transition-all disabled:opacity-50"

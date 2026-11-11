@@ -7,15 +7,9 @@ import {
   Plus,
   X,
   Loader2,
-  Clock,
-  MapPin,
   Calendar as CalIcon,
   Download,
-  FileText,
-  CheckSquare,
-  AlignLeft,
   RefreshCw,
-  ChevronDown,
 } from "lucide-react";
 import {
   format,
@@ -35,6 +29,7 @@ import {
   startOfDay,
   addDays,
   differenceInCalendarDays,
+  addHours,
 } from "date-fns";
 import { useApp } from "@crewmate/state";
 import { useSession } from "next-auth/react";
@@ -49,6 +44,7 @@ import {
 import {
   buildGoogleEventTimes,
   instantToWallClock,
+  prefillHintToWallClock,
   instantToZonedDate,
   isValidTimeZone,
   toInsertEventDateTime,
@@ -57,6 +53,9 @@ import {
   calculateMonthWeekMinHeight,
   isMonthSegmentOutside,
 } from "./monthLayout";
+import { computeOverlapLayout, computeSpanningLayout } from "./eventLayout";
+import EventFormFields from "./EventFormFields";
+import { CalendarImportPanel, EventDetailsPanel } from "./CalendarSidePanels";
 
 type ViewMode = "month" | "week";
 
@@ -292,34 +291,16 @@ export default function CalendarPage() {
       setFormStart(`${dateStr}T09:00`);
       setFormEnd(`${dateStr}T10:00`);
     } else if (pf.startHint) {
-      try {
-        const startDt = new Date(pf.startHint);
-        if (!isNaN(startDt.getTime())) {
-          setFormStart(format(startDt, "yyyy-MM-dd'T'HH:mm"));
-          setFormAllDay(false);
-        } else {
-          setFormStart(`${dateStr}T09:00`);
-          setFormAllDay(false);
-        }
-      } catch {
-        setFormStart(`${dateStr}T09:00`);
-        setFormAllDay(false);
-      }
+      const start = prefillHintToWallClock(pf.startHint, displayTimeZone) ?? `${dateStr}T09:00`;
+      setFormStart(start);
+      setFormAllDay(false);
       setFormEndDate("");
-      if (pf.endHint) {
-        try {
-          const endDt = new Date(pf.endHint);
-          if (!isNaN(endDt.getTime())) {
-            setFormEnd(format(endDt, "yyyy-MM-dd'T'HH:mm"));
-          } else {
-            setFormEnd(`${dateStr}T10:00`);
-          }
-        } catch {
-          setFormEnd(`${dateStr}T10:00`);
-        }
-      } else {
-        setFormEnd(`${dateStr}T10:00`);
-      }
+      const end = prefillHintToWallClock(pf.endHint, displayTimeZone);
+      setFormEnd(
+        end && end > start
+          ? end
+          : format(addHours(parseISO(start), 1), "yyyy-MM-dd'T'HH:mm"),
+      );
     } else {
       setFormStart(`${dateStr}T09:00`);
       setFormEnd(`${dateStr}T10:00`);
@@ -550,6 +531,10 @@ export default function CalendarPage() {
       setFormErrors(errors);
       return;
     }
+    if (!editingEvent.calendarId) {
+      setFormErrors({ start: "This event's calendar is unknown; reload and try again" });
+      return;
+    }
     setFormErrors({});
     setSaving(true);
     const tz =
@@ -683,140 +668,11 @@ export default function CalendarPage() {
   const nowMinutes = displayNow.getHours() * 60 + displayNow.getMinutes();
   const nowTop = ((nowMinutes - startHour * 60) / 60) * 56;
 
-  // Compute overlap layout for a set of timed events on a single day.
-  // Returns a map from event id → { col, totalCols }.
-  function computeOverlapLayout(
-    events: CalendarEvent[],
-  ): Map<string, { col: number; totalCols: number }> {
-    // Sort by start time, then by duration descending
-    const sorted = [...events].sort((a, b) => {
-      const diff = eventStart(a).getTime() - eventStart(b).getTime();
-      if (diff !== 0) return diff;
-      return (
-        eventEnd(b).getTime() -
-        eventStart(b).getTime() -
-        (eventEnd(a).getTime() - eventStart(a).getTime())
-      );
-    });
-
-    // Each slot tracks the end-time of the last event placed in that column
-    const cols: number[] = []; // cols[i] = end-time (ms) of last event in column i
-    const layout = new Map<string, { col: number; totalCols: number }>();
-
-    for (const ev of sorted) {
-      const start = eventStart(ev).getTime();
-      const end = eventEnd(ev).getTime();
-
-      // Find the first column whose last event has already ended
-      let placed = -1;
-      for (let i = 0; i < cols.length; i++) {
-        if (cols[i] <= start) {
-          placed = i;
-          break;
-        }
-      }
-      if (placed === -1) {
-        placed = cols.length;
-        cols.push(0);
-      }
-      cols[placed] = end;
-      layout.set(ev.id, { col: placed, totalCols: 0 }); // totalCols filled below
-    }
-
-    const totalCols = cols.length;
-
-    // Second pass: for each event, totalCols = number of cols that actually
-    // overlap with it (to avoid giving an event unnecessarily narrow width).
-    for (const ev of sorted) {
-      const entry = layout.get(ev.id)!;
-      const start = eventStart(ev).getTime();
-      const end = eventEnd(ev).getTime();
-
-      // Count how many columns contain an event that overlaps this one
-      let maxCol = entry.col;
-      for (const other of sorted) {
-        if (other.id === ev.id) continue;
-        const oStart = eventStart(other).getTime();
-        const oEnd = eventEnd(other).getTime();
-        if (oStart < end && oEnd > start) {
-          const otherEntry = layout.get(other.id)!;
-          if (otherEntry.col > maxCol) maxCol = otherEntry.col;
-        }
-      }
-      entry.totalCols = maxCol + 1 < totalCols ? maxCol + 1 : totalCols;
-    }
-
-    return layout;
-  }
-
-  // Compute layout rows for all-day/multi-day events across a set of days.
-  // Returns: array of { ev, startCol, endCol (exclusive), row }
-  function computeAllDayLayout(
-    days: Date[],
-    events: CalendarEvent[],
-  ): Array<{
-    ev: CalendarEvent;
-    startCol: number;
-    endCol: number;
-    row: number;
-  }> {
-    const result: Array<{
-      ev: CalendarEvent;
-      startCol: number;
-      endCol: number;
-      row: number;
-    }> = [];
-    // Deduplicate: only process each event once
-    const seen = new Set<string>();
-    // Sort by start time, then by duration descending so longer events get row priority
-    const sorted = [...events].sort((a, b) => {
-      const startDiff = eventStart(a).getTime() - eventStart(b).getTime();
-      if (startDiff !== 0) return startDiff;
-      return eventEnd(b).getTime() - eventEnd(a).getTime();
-    });
-    const rows: number[][] = []; // rows[r] = array of endCol values of events placed in that row
-
-    for (const ev of sorted) {
-      if (seen.has(ev.id)) continue;
-      seen.add(ev.id);
-
-      const evStart = startOfDay(eventStart(ev));
-      // For timed events, end is inclusive so add 1 day to make it exclusive like all-day events
-      const evEnd = ev.start.dateTime
-        ? addDays(startOfDay(eventEnd(ev)), 1)
-        : startOfDay(eventEnd(ev));
-
-      // Find which columns this event occupies in this week
-      let startCol = days.findIndex((d) => startOfDay(d) >= evStart);
-      if (startCol === -1) startCol = 0;
-
-      // endCol: first day index where day >= evEnd (exclusive)
-      let endCol = days.findIndex((d) => startOfDay(d) >= evEnd);
-      if (endCol === -1) endCol = days.length;
-      endCol = Math.min(endCol, days.length);
-      // Skip events that don't actually occupy any column in this week
-      if (endCol <= startCol) continue;
-
-      // Find a row where this event fits (no overlap in [startCol, endCol))
-      let row = 0;
-      while (true) {
-        if (!rows[row]) {
-          rows[row] = [];
-          break;
-        }
-        // Check if any event in this row overlaps [startCol, endCol)
-        const conflicts = result.filter(
-          (r) => r.row === row && r.startCol < endCol && r.endCol > startCol,
-        );
-        if (conflicts.length === 0) break;
-        row++;
-      }
-      if (!rows[row]) rows[row] = [];
-
-      result.push({ ev, startCol, endCol, row });
-    }
-    return result;
-  }
+  const eventTime = {
+    start: eventStart,
+    end: eventEnd,
+    isTimed: (event: CalendarEvent) => Boolean(event.start.dateTime),
+  };
 
   if (
     sessionStatus === "unauthenticated" ||
@@ -857,12 +713,14 @@ export default function CalendarPage() {
         <div className="flex items-center gap-2.5">
           <div className="flex items-center border border-border-2 rounded-lg overflow-hidden">
             <button
+              aria-label="Previous period"
               onClick={() => navigate(-1)}
               className="w-8 h-8 flex items-center justify-center text-text-2 hover:text-text hover:bg-surface transition-colors"
             >
               <ChevronLeft size={15} />
             </button>
             <button
+              aria-label="Next period"
               onClick={() => navigate(1)}
               className="w-8 h-8 flex items-center justify-center text-text-2 hover:text-text hover:bg-surface transition-colors border-l border-border-2"
             >
@@ -885,6 +743,7 @@ export default function CalendarPage() {
             <Loader2 size={13} className="animate-spin text-text-3 ml-1" />
           )}
           <button
+            aria-label="Refresh events"
             onClick={() => {
               const timeMin = startOfMonth(subMonths(cursor, 1)).toISOString();
               const timeMax = endOfMonth(addMonths(cursor, 1)).toISOString();
@@ -992,9 +851,10 @@ export default function CalendarPage() {
                   );
                   const multiDayTimed = timedInRow.filter(isMultiDay);
                   const allSpanning = [...allDayInRow, ...multiDayTimed];
-                  const combinedLayout = computeAllDayLayout(
+                  const combinedLayout = computeSpanningLayout(
                     weekRow,
                     allSpanning,
+                    eventTime,
                   );
                   const spanLayout = combinedLayout.filter(
                     (l) => !l.ev.start.dateTime,
@@ -1275,7 +1135,7 @@ export default function CalendarPage() {
                   ...multiDayTimedInWeek,
                 ];
                 if (allSpanning.length === 0) return null;
-                const layout = computeAllDayLayout(weekDays, allSpanning);
+                const layout = computeSpanningLayout(weekDays, allSpanning, eventTime);
                 const numRows =
                   layout.length > 0
                     ? Math.max(...layout.map((l) => l.row)) + 1
@@ -1393,7 +1253,7 @@ export default function CalendarPage() {
                         return end.getHours() >= startHour && start.getHours() < endHour;
                       },
                     );
-                    const overlapLayout = computeOverlapLayout(dayEvents);
+                    const overlapLayout = computeOverlapLayout(dayEvents, eventTime);
                     const todayCol = isToday(day);
                     return (
                       <div
@@ -1500,192 +1360,39 @@ export default function CalendarPage() {
 
         {/* Import panel */}
         {importPanelOpen && (
-          <aside
-            className="flex-shrink-0 flex flex-col border-l border-border bg-bg overflow-hidden relative"
-            style={{
-              width: importResize.width,
-              animation: "slideInRight 200ms ease-out",
-            }}
-          >
-            <div
-              className="resize-handle"
-              style={{ left: 0 }}
-              onPointerDown={importResize.onPointerDown}
-              onPointerMove={importResize.onPointerMove}
-              onPointerUp={importResize.onPointerUp}
-              onPointerCancel={importResize.onPointerCancel}
-              onLostPointerCapture={importResize.onLostPointerCapture}
-            />
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <div className="flex items-center gap-2">
-                <Download size={13} className="text-accent" />
-                <span className="text-xs font-semibold text-text">
-                  Import to Calendar
-                </span>
-              </div>
-              <button
-                onClick={() => setImportPanelOpen(false)}
-                className="text-text-3 hover:text-text p-1 rounded-lg hover:bg-surface-2 transition-colors"
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {importableTasks.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-1.5 px-4 py-2 text-xs uppercase tracking-widest text-text-3 font-semibold border-b border-border/50 sticky top-0 bg-bg">
-                    <CheckSquare size={12} /> Tasks
-                  </div>
-                  {importableTasks
-                    .filter((t) => t.status !== "done")
-                    .map((task) => (
-                      <button
-                        key={task.id}
-                        onClick={() => importFromTask(task)}
-                        className="w-full flex flex-col gap-0.5 px-4 py-2.5 text-left border-b border-border/30 hover:bg-surface transition-colors"
-                      >
-                        <span className="text-xs text-text truncate">
-                          {task.title}
-                        </span>
-                        {task.dueDate && (
-                          <span className="text-xs text-text-3 flex items-center gap-1">
-                            <Clock size={11} />
-                            {format(new Date(task.dueDate), "MMM d")}
-                          </span>
-                        )}
-                        <span
-                          className={`text-xs font-medium ${task.priority === "high" ? "text-danger" : task.priority === "medium" ? "text-warning" : "text-text-3"}`}
-                        >
-                          {task.priority}
-                        </span>
-                      </button>
-                    ))}
-                </div>
-              )}
-              {importableNotes.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-1.5 px-4 py-2 text-xs uppercase tracking-widest text-text-3 font-semibold border-b border-border/50 sticky top-0 bg-bg">
-                    <FileText size={12} /> Notes
-                  </div>
-                  {importableNotes.map((note) => (
-                    <button
-                      key={note.id}
-                      onClick={() => importFromNote(note)}
-                      className="w-full flex flex-col gap-0.5 px-4 py-2.5 text-left border-b border-border/30 hover:bg-surface transition-colors"
-                    >
-                      <span className="text-xs text-text truncate">
-                        {note.title}
-                      </span>
-                      <span className="text-xs text-text-3 truncate">
-                        {note.content.replace(/[#*_`\n]/g, " ").slice(0, 50)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {importableTasks.length === 0 && importableNotes.length === 0 && (
-                <div className="flex flex-col items-center justify-center gap-3 py-10 px-4 text-center">
-                  <Download size={20} className="text-text-3" />
-                  <p className="text-xs text-text-3 leading-relaxed">
-                    No tasks or notes loaded yet.
-                    <br />
-                    Open some in Tasks or Notes first.
-                  </p>
-                </div>
-              )}
-            </div>
-          </aside>
+          <CalendarImportPanel
+            tasks={importableTasks}
+            notes={importableNotes}
+            resize={importResize}
+            onClose={() => setImportPanelOpen(false)}
+            onImportTask={importFromTask}
+            onImportNote={importFromNote}
+          />
         )}
       </div>
 
       {/* Event detail panel */}
       {selectedEvent && (
-        <div
-          className="absolute top-0 right-0 bottom-0 w-80 bg-bg border-l border-border flex flex-col z-40 shadow-2xl"
-          style={{ animation: "slideInRight 200ms ease-out" }}
-        >
-          <div
-            className="h-1 flex-shrink-0"
-            style={{ backgroundColor: eventColor(selectedEvent) }}
-          />
-          <div className="flex items-start justify-between px-5 py-4 border-b border-border">
-            <div className="flex-1 min-w-0 pr-3">
-              <span className="text-sm font-semibold text-text leading-snug block">
-                {selectedEvent.summary}
-              </span>
-            </div>
-            <button
-              onClick={() => setSelectedEvent(null)}
-              className="text-text-3 hover:text-text p-1.5 rounded-lg hover:bg-surface transition-colors flex-shrink-0"
-            >
-              <X size={14} />
-            </button>
-          </div>
-          <div className="flex flex-col gap-4 px-5 py-4 flex-1 overflow-y-auto">
-            <div className="flex items-start gap-3 text-sm text-text-2">
-              <Clock size={14} className="flex-shrink-0 mt-0.5 text-text-3" />
-              <div className="leading-relaxed">
-                {selectedEvent.start.dateTime
-                  ? `${format(eventStart(selectedEvent), `EEE, MMM d · ${timeFmtA}`)} – ${format(eventEnd(selectedEvent), timeFmtA)}`
-                  : isMultiDay(selectedEvent)
-                    ? `${format(eventStart(selectedEvent), "EEE, MMM d")} – ${format(addDays(eventEnd(selectedEvent), -1), "EEE, MMM d")}`
-                    : format(eventStart(selectedEvent), "EEEE, MMMM d")}
-              </div>
-            </div>
-            {selectedEvent.location && (
-              <div className="flex items-start gap-3 text-sm text-text-2">
-                <MapPin
-                  size={14}
-                  className="flex-shrink-0 mt-0.5 text-text-3"
-                />
-                <span className="leading-relaxed">
-                  {selectedEvent.location}
-                </span>
-              </div>
-            )}
-            {selectedEvent.description && (
-              <div className="flex items-start gap-3 text-sm text-text-2">
-                <AlignLeft
-                  size={14}
-                  className="flex-shrink-0 mt-0.5 text-text-3"
-                />
-                <span className="leading-relaxed">
-                  {selectedEvent.description}
-                </span>
-              </div>
-            )}
-            {selectedEvent.calendarId && calendarList.length > 0 && (
-              <div className="flex items-start gap-3 text-sm text-text-2">
-                <CalIcon
-                  size={14}
-                  className="flex-shrink-0 mt-0.5 text-text-3"
-                />
-                <span className="leading-relaxed">
-                  {calendarList.find((c) => c.id === selectedEvent.calendarId)
-                    ?.summary ?? selectedEvent.calendarId}
-                </span>
-              </div>
-            )}
-          </div>
-          <div className="px-5 pb-5 flex flex-col gap-2">
-            <button
-              onClick={() => openEdit(selectedEvent)}
-              disabled={!isCalendarWritable(selectedEvent.calendarId)}
-              style={{ padding: "2px 12px" }}
-              className="w-full text-sm font-medium text-text-2 border border-border-2 rounded-lg hover:bg-surface-2 hover:text-text transition-all"
-            >
-              Edit event
-            </button>
-            <button
-              onClick={() => handleDelete(selectedEvent)}
-              disabled={!isCalendarWritable(selectedEvent.calendarId)}
-              style={{ padding: "2px 12px" }}
-              className="w-full text-sm font-medium text-danger border border-danger/25 rounded-lg hover:bg-danger/8 hover:border-danger/50 transition-all"
-            >
-              Delete event
-            </button>
-          </div>
-        </div>
+        <EventDetailsPanel
+          event={selectedEvent}
+          color={eventColor(selectedEvent)}
+          whenLabel={
+            selectedEvent.start.dateTime
+              ? `${format(eventStart(selectedEvent), `EEE, MMM d · ${timeFmtA}`)} – ${format(eventEnd(selectedEvent), timeFmtA)}`
+              : isMultiDay(selectedEvent)
+                ? `${format(eventStart(selectedEvent), "EEE, MMM d")} – ${format(addDays(eventEnd(selectedEvent), -1), "EEE, MMM d")}`
+                : format(eventStart(selectedEvent), "EEEE, MMMM d")
+          }
+          calendarName={
+            selectedEvent.calendarId && calendarList.length > 0
+              ? (calendarList.find((c) => c.id === selectedEvent.calendarId)?.summary ?? selectedEvent.calendarId)
+              : undefined
+          }
+          writable={isCalendarWritable(selectedEvent.calendarId)}
+          onClose={() => setSelectedEvent(null)}
+          onEdit={() => openEdit(selectedEvent)}
+          onDelete={() => void handleDelete(selectedEvent)}
+        />
       )}
 
       {/* Create event modal */}
@@ -1723,6 +1430,7 @@ export default function CalendarPage() {
                 </div>
               </div>
               <button
+                aria-label="Close new event form"
                 onClick={closeCreateForm}
                 className="text-text-3 hover:text-text p-1.5 rounded-lg hover:bg-surface-2 transition-colors"
               >
@@ -1730,186 +1438,32 @@ export default function CalendarPage() {
               </button>
             </div>
             <div className="flex flex-col gap-4 px-6 py-5">
-              {/* Title */}
-              <div className="flex flex-col gap-1">
-                <input
-                  autoFocus
-                  className={`w-full bg-transparent border-b px-0 py-2 text-base font-semibold text-text outline-none placeholder:text-text-3 transition-colors ${formErrors.title ? "border-danger" : "border-border-2 focus:border-accent"}`}
-                  placeholder="Add a title..."
-                  value={formTitle}
-                  onChange={(e) => {
-                    setFormTitle(e.target.value);
-                    if (formErrors.title)
-                      setFormErrors((p) => ({ ...p, title: "" }));
-                  }}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" && !saving && handleCreate()
-                  }
-                />
-                {formErrors.title && (
-                  <span className="text-xs text-danger">
-                    {formErrors.title}
-                  </span>
-                )}
-              </div>
-
-              {/* All day toggle */}
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-text-2">All day</span>
-                <button
-                  type="button"
-                  onClick={toggleFormAllDay}
-                  className={`relative rounded-full transition-colors ${formAllDay ? "bg-accent" : "bg-border-2"}`}
-                  style={{ height: 22, width: 40 }}
-                >
-                  <div
-                    className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${formAllDay ? "translate-x-[19px]" : "translate-x-[3px]"}`}
-                  />
-                </button>
-              </div>
-
-              {/* Date/time */}
-              {formAllDay ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
-                      Start date
-                    </label>
-                    <input
-                      type="date"
-                      value={createDate}
-                      onChange={(e) => {
-                        setCreateDate(e.target.value);
-                        if (formErrors.date)
-                          setFormErrors((p) => ({ ...p, date: "" }));
-                      }}
-                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.date ? "border-danger" : "border-border-2 focus:border-accent"}`}
-                    />
-                    {formErrors.date && (
-                      <span className="text-xs text-danger">
-                        {formErrors.date}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
-                      End date
-                    </label>
-                    <input
-                      type="date"
-                      value={formEndDate || createDate}
-                      min={createDate}
-                      onChange={(e) => {
-                        setFormEndDate(e.target.value);
-                        if (formErrors.endDate)
-                          setFormErrors((p) => ({ ...p, endDate: "" }));
-                      }}
-                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.endDate ? "border-danger" : "border-border-2 focus:border-accent"}`}
-                    />
-                    {formErrors.endDate && (
-                      <span className="text-xs text-danger">
-                        {formErrors.endDate}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
-                      Start
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={formStart}
-                      onChange={(e) => {
-                        setFormStart(e.target.value);
-                        if (formErrors.start)
-                          setFormErrors((p) => ({ ...p, start: "" }));
-                      }}
-                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.start ? "border-danger" : "border-border-2 focus:border-accent"}`}
-                    />
-                    {formErrors.start && (
-                      <span className="text-xs text-danger">
-                        {formErrors.start}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
-                      End
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={formEnd}
-                      onChange={(e) => {
-                        setFormEnd(e.target.value);
-                        if (formErrors.end)
-                          setFormErrors((p) => ({ ...p, end: "" }));
-                      }}
-                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.end ? "border-danger" : "border-border-2 focus:border-accent"}`}
-                    />
-                    {formErrors.end && (
-                      <span className="text-xs text-danger">
-                        {formErrors.end}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Location — label above, no overlapping icon */}
-              <div className="flex flex-col gap-1">
-                <label className="flex items-center gap-1.5 text-xs font-semibold text-text-3 uppercase tracking-widest">
-                  <MapPin size={11} /> Location
-                </label>
-                <input
-                  className="w-full bg-bg border border-border-2 rounded-lg px-3 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
-                  placeholder="Add location"
-                  value={formLocation}
-                  onChange={(e) => setFormLocation(e.target.value)}
-                />
-              </div>
-
-              {/* Description — label above, no overlapping icon */}
-              <div className="flex flex-col gap-1">
-                <label className="flex items-center gap-1.5 text-xs font-semibold text-text-3 uppercase tracking-widest">
-                  <AlignLeft size={11} /> Description
-                </label>
-                <textarea
-                  className="w-full bg-bg border border-border-2 rounded-lg px-3 py-2.5 text-sm text-text outline-none focus:border-accent resize-none placeholder:text-text-3 transition-colors leading-relaxed"
-                  placeholder="Add description"
-                  rows={3}
-                  value={formDesc}
-                  onChange={(e) => setFormDesc(e.target.value)}
-                />
-              </div>
-
-              {/* Calendar selector */}
-              {calendarList.length > 0 && (
-                <div className="flex flex-col gap-1">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-text-3 uppercase tracking-widest">
-                    <CalIcon size={11} /> Calendar
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={formCalendarId}
-                      onChange={(e) => setFormCalendarId(e.target.value)}
-                      className="w-full appearance-none bg-bg border border-border-2 rounded-lg px-3 py-2.5 text-sm text-text outline-none focus:border-accent transition-colors pr-8 cursor-pointer"
-                    >
-                      {calendarList.filter((c) => c.writable).map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.summary}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown
-                      size={13}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none"
-                    />
-                  </div>
-                </div>
-              )}
+              <EventFormFields
+                title={formTitle}
+                setTitle={setFormTitle}
+                allDay={formAllDay}
+                onToggleAllDay={toggleFormAllDay}
+                startDate={createDate}
+                setStartDate={setCreateDate}
+                endDate={formEndDate}
+                setEndDate={setFormEndDate}
+                start={formStart}
+                setStart={setFormStart}
+                end={formEnd}
+                setEnd={setFormEnd}
+                location={formLocation}
+                setLocation={setFormLocation}
+                description={formDesc}
+                setDescription={setFormDesc}
+                errors={formErrors}
+                setErrors={setFormErrors}
+                calendars={calendarList}
+                calendarId={formCalendarId}
+                setCalendarId={setFormCalendarId}
+                saving={saving}
+                titlePlaceholder="Add a title..."
+                onSubmit={handleCreate}
+              />
 
               {/* Actions */}
               <div className="flex gap-3 pt-1">
@@ -1977,6 +1531,7 @@ export default function CalendarPage() {
                 </span>
               </div>
               <button
+                aria-label="Close edit event form"
                 onClick={() => {
                   setEditOpen(false);
                   setEditingEvent(null);
@@ -1987,186 +1542,33 @@ export default function CalendarPage() {
               </button>
             </div>
             <div className="flex flex-col gap-4 px-6 py-5">
-              {/* Title */}
-              <div className="flex flex-col gap-1">
-                <input
-                  autoFocus
-                  className={`w-full bg-transparent border-b px-0 py-2 text-base font-semibold text-text outline-none placeholder:text-text-3 transition-colors ${formErrors.title ? "border-danger" : "border-border-2 focus:border-accent"}`}
-                  placeholder="Event title..."
-                  value={formTitle}
-                  onChange={(e) => {
-                    setFormTitle(e.target.value);
-                    if (formErrors.title)
-                      setFormErrors((p) => ({ ...p, title: "" }));
-                  }}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" && !saving && handleUpdate()
-                  }
-                />
-                {formErrors.title && (
-                  <span className="text-xs text-danger">
-                    {formErrors.title}
-                  </span>
-                )}
-              </div>
-
-              {/* All day toggle */}
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-text-2">All day</span>
-                <button
-                  type="button"
-                  onClick={toggleFormAllDay}
-                  className={`relative rounded-full transition-colors ${formAllDay ? "bg-accent" : "bg-border-2"}`}
-                  style={{ height: 22, width: 40 }}
-                >
-                  <div
-                    className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${formAllDay ? "translate-x-[19px]" : "translate-x-[3px]"}`}
-                  />
-                </button>
-              </div>
-
-              {/* Date/time */}
-              {formAllDay ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
-                      Start date
-                    </label>
-                    <input
-                      type="date"
-                      value={createDate}
-                      onChange={(e) => {
-                        setCreateDate(e.target.value);
-                        if (formErrors.date)
-                          setFormErrors((p) => ({ ...p, date: "" }));
-                      }}
-                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.date ? "border-danger" : "border-border-2 focus:border-accent"}`}
-                    />
-                    {formErrors.date && (
-                      <span className="text-xs text-danger">
-                        {formErrors.date}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
-                      End date
-                    </label>
-                    <input
-                      type="date"
-                      value={formEndDate || createDate}
-                      min={createDate}
-                      onChange={(e) => {
-                        setFormEndDate(e.target.value);
-                        if (formErrors.endDate)
-                          setFormErrors((p) => ({ ...p, endDate: "" }));
-                      }}
-                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.endDate ? "border-danger" : "border-border-2 focus:border-accent"}`}
-                    />
-                    {formErrors.endDate && (
-                      <span className="text-xs text-danger">
-                        {formErrors.endDate}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
-                      Start
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={formStart}
-                      onChange={(e) => {
-                        setFormStart(e.target.value);
-                        if (formErrors.start)
-                          setFormErrors((p) => ({ ...p, start: "" }));
-                      }}
-                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.start ? "border-danger" : "border-border-2 focus:border-accent"}`}
-                    />
-                    {formErrors.start && (
-                      <span className="text-xs text-danger">
-                        {formErrors.start}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-text-3 uppercase tracking-widest">
-                      End
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={formEnd}
-                      onChange={(e) => {
-                        setFormEnd(e.target.value);
-                        if (formErrors.end)
-                          setFormErrors((p) => ({ ...p, end: "" }));
-                      }}
-                      className={`w-full bg-bg border rounded-lg px-3 py-2 text-sm text-text outline-none transition-colors ${formErrors.end ? "border-danger" : "border-border-2 focus:border-accent"}`}
-                    />
-                    {formErrors.end && (
-                      <span className="text-xs text-danger">
-                        {formErrors.end}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Location */}
-              <div className="flex flex-col gap-1">
-                <label className="flex items-center gap-1.5 text-xs font-semibold text-text-3 uppercase tracking-widest">
-                  <MapPin size={11} /> Location
-                </label>
-                <input
-                  className="w-full bg-bg border border-border-2 rounded-lg px-3 py-2.5 text-sm text-text outline-none focus:border-accent placeholder:text-text-3 transition-colors"
-                  placeholder="Add location"
-                  value={formLocation}
-                  onChange={(e) => setFormLocation(e.target.value)}
-                />
-              </div>
-
-              {/* Description */}
-              <div className="flex flex-col gap-1">
-                <label className="flex items-center gap-1.5 text-xs font-semibold text-text-3 uppercase tracking-widest">
-                  <AlignLeft size={11} /> Description
-                </label>
-                <textarea
-                  className="w-full bg-bg border border-border-2 rounded-lg px-3 py-2.5 text-sm text-text outline-none focus:border-accent resize-none placeholder:text-text-3 transition-colors leading-relaxed"
-                  placeholder="Add description"
-                  rows={3}
-                  value={formDesc}
-                  onChange={(e) => setFormDesc(e.target.value)}
-                />
-              </div>
-
-              {/* Calendar selector */}
-              {calendarList.length > 0 && (
-                <div className="flex flex-col gap-1">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-text-3 uppercase tracking-widest">
-                    <CalIcon size={11} /> Calendar
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={formCalendarId}
-                      onChange={(e) => setFormCalendarId(e.target.value)}
-                      className="w-full appearance-none bg-bg border border-border-2 rounded-lg px-3 py-2.5 text-sm text-text outline-none focus:border-accent transition-colors pr-8 cursor-pointer"
-                    >
-                      {calendarList.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.summary}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown
-                      size={13}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none"
-                    />
-                  </div>
-                </div>
-              )}
+              <EventFormFields
+                title={formTitle}
+                setTitle={setFormTitle}
+                allDay={formAllDay}
+                onToggleAllDay={toggleFormAllDay}
+                startDate={createDate}
+                setStartDate={setCreateDate}
+                endDate={formEndDate}
+                setEndDate={setFormEndDate}
+                start={formStart}
+                setStart={setFormStart}
+                end={formEnd}
+                setEnd={setFormEnd}
+                location={formLocation}
+                setLocation={setFormLocation}
+                description={formDesc}
+                setDescription={setFormDesc}
+                errors={formErrors}
+                setErrors={setFormErrors}
+                calendars={calendarList}
+                calendarId={formCalendarId}
+                setCalendarId={setFormCalendarId}
+                saving={saving}
+                lockedCalendarId={editingEvent.calendarId}
+                titlePlaceholder="Event title..."
+                onSubmit={handleUpdate}
+              />
 
               {/* Actions */}
               <div className="flex gap-3 pt-1">

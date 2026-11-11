@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useApp } from "@crewmate/state";
+import { ApiError, apiFetch, isAbortError, jsonRequest } from "@crewmate/lib";
 import { normalizeEnabledCalendarIds } from "./calendarSettings";
 import { DEFAULT_CALENDAR_SETTINGS, type CalendarPluginSettings } from "./settings";
 
@@ -24,6 +25,14 @@ export function useCalendar() {
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState(false);
   const fetchControllerRef = useRef<AbortController | null>(null);
+  /** Records an expired session; returns true when the error was handled that way. */
+  const handleAuth = useCallback((error: unknown): boolean => {
+    if (error instanceof ApiError && error.isAuthExpired) {
+      setAuthError(true);
+      return true;
+    }
+    return false;
+  }, []);
   const fetchVersionRef = useRef(0);
 
   useEffect(() => () => fetchControllerRef.current?.abort(), []);
@@ -50,32 +59,29 @@ export function useCalendar() {
         );
         params.set("calendarIds", enabledIds.join(","));
 
-        const res = await fetch(`/api/calendar/events?${params}`, {
-          signal: controller.signal,
-        });
-        if (!res.ok) {
-          if (res.status === 401) setAuthError(true);
-          throw new Error("Failed to fetch events");
-        }
-        const data = await res.json();
+        const data = await apiFetch<{ events?: CalendarEvent[]; truncated?: boolean }>(
+          `/api/calendar/events?${params}`,
+          { signal: controller.signal, fallbackError: "Failed to load calendar events" },
+        );
         if (requestVersion !== fetchVersionRef.current) return;
         setAuthError(false);
+        const loaded = Array.isArray(data?.events) ? data.events : [];
         const visibleEvents = calendarSettings.showDeclined
-          ? data.events
-          : data.events.filter((event: CalendarEvent) =>
+          ? loaded
+          : loaded.filter((event: CalendarEvent) =>
               !event.attendees?.some((attendee) => attendee.self && attendee.responseStatus === "declined"),
             );
         setEvents(visibleEvents);
-        if (data.truncated) notify("Calendar results were limited to 1,000 events per calendar", "info");
+        if (data?.truncated) notify("Calendar results were limited to 1,000 events per calendar", "info");
       } catch (error: unknown) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        if (requestVersion !== fetchVersionRef.current) return;
+        if (isAbortError(error) || requestVersion !== fetchVersionRef.current) return;
+        if (handleAuth(error)) return;
         notify("Failed to load calendar events", "error");
       } finally {
         if (requestVersion === fetchVersionRef.current) setLoading(false);
       }
     },
-    [notify, calendarSettings.enabledCalendarIds, calendarSettings.showDeclined],
+    [notify, handleAuth, calendarSettings.enabledCalendarIds, calendarSettings.showDeclined],
   );
 
   const createEvent = useCallback(
@@ -91,80 +97,62 @@ export function useCalendar() {
         const { calendarId, ...rest } = event;
         const targetCalendarId =
           calendarId || calendarSettings.defaultCalendarId || "primary";
-        const res = await fetch("/api/calendar/events", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...rest, calendarId: targetCalendarId }),
+        const data = await apiFetch<CalendarEvent>("/api/calendar/events", {
+          ...jsonRequest("POST", { ...rest, calendarId: targetCalendarId }),
+          fallbackError: "Failed to create event",
         });
-        if (!res.ok) {
-          if (res.status === 401) setAuthError(true);
-          throw new Error("Create event failed");
-        }
-        const data = await res.json();
         setEvents((prev) => [...prev, data].sort(sortByStart));
         notify("Event created", "success");
-        return data as CalendarEvent;
-      } catch {
-        notify("Failed to create event", "error");
+        return data;
+      } catch (error: unknown) {
+        if (!handleAuth(error)) notify("Failed to create event", "error");
         return null;
       }
     },
-    [notify, calendarSettings.defaultCalendarId],
+    [notify, handleAuth, calendarSettings.defaultCalendarId],
   );
 
   const updateEvent = useCallback(
     async (
       id: string,
       patch: Partial<CalendarEvent>,
-      calendarId?: string,
+      calendarId: string,
     ) => {
       try {
-        const res = await fetch(`/api/calendar/events/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...patch,
-            calendarId: calendarId ?? "primary",
-          }),
+        const data = await apiFetch<CalendarEvent>(`/api/calendar/events/${encodeURIComponent(id)}`, {
+          ...jsonRequest("PATCH", { ...patch, calendarId }),
+          fallbackError: "Failed to update event",
         });
-        if (!res.ok) {
-          if (res.status === 401) setAuthError(true);
-          throw new Error("Update event failed");
-        }
-        const data = await res.json();
         setEvents((prev) =>
-          prev.map((e) => (e.id === id ? data : e)).sort(sortByStart),
+          prev.map((e) => (e.id === id && e.calendarId === calendarId ? data : e)).sort(sortByStart),
         );
         notify("Event updated", "success");
-        return data as CalendarEvent;
-      } catch {
-        notify("Failed to update event", "error");
+        return data;
+      } catch (error: unknown) {
+        if (!handleAuth(error)) notify("Failed to update event", "error");
         return null;
       }
     },
-    [notify],
+    [notify, handleAuth],
   );
 
   const deleteEvent = useCallback(
     async (id: string, calendarId: string) => {
       try {
         const params = new URLSearchParams({ calendarId });
-        const res = await fetch(`/api/calendar/events/${encodeURIComponent(id)}?${params}`, {
+        await apiFetch(`/api/calendar/events/${encodeURIComponent(id)}?${params}`, {
           method: "DELETE",
+          fallbackError: "Failed to delete event",
         });
-        if (!res.ok) {
-          if (res.status === 401) setAuthError(true);
-          throw new Error("Delete event failed");
-        }
-        setEvents((prev) => prev.filter((e) => e.id !== id));
+        setEvents((prev) => prev.filter((e) => !(e.id === id && e.calendarId === calendarId)));
         notify("Event deleted", "success");
         return true;
-      } catch {
-        notify("Failed to delete event", "error");
+      } catch (error: unknown) {
+        if (!handleAuth(error)) notify("Failed to delete event", "error");
         return false;
       }
     },
-    [notify],
+    [notify, handleAuth],
   );
 
   return {

@@ -16,7 +16,7 @@
         "start": "npm run start --workspace=@crewmate/web",
         "lint": "eslint --config apps/web/eslint.config.mjs apps/web/src packages",
         "typecheck": "tsc -p apps/web/tsconfig.json --noEmit --pretty false",
-        "test": "node --test packages/*/src/*.test.ts",
+        "test": "node --test packages/*/src/*.test.ts apps/web/src/lib/*.test.ts",
         "check": "npm run lint && npm run typecheck && npm test",
         "check:all": "npm run check && npm run build"
     },

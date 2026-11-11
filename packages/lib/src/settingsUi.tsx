@@ -44,6 +44,10 @@ export function SettingToggle({
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-text">{label}</span>
         <button
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          aria-label={label}
           onClick={onChange}
           className={`relative rounded-full transition-colors flex-shrink-0 ${checked ? "bg-accent" : "bg-border-2"}`}
           style={{ height: 22, width: 40 }}

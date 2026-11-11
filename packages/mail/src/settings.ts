@@ -17,7 +17,7 @@ export interface GmailPluginSettings {
 
 export const DEFAULT_GMAIL_SETTINGS: GmailPluginSettings = {
   maxThreads: 20,
-  defaultQuery: "is:inbox",
+  defaultQuery: "in:inbox",
   mainLanguage: "en",
   autoTranslateForeignEmails: true,
   allowAITranslationFallback: false,

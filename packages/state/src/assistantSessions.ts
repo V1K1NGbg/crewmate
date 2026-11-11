@@ -1,5 +1,9 @@
 import type { AssistantMessage, AssistantSession } from "@crewmate/types";
 
+/** Upper bounds that keep in-memory and persisted assistant history bounded. */
+export const MAX_ASSISTANT_SESSIONS = 25;
+export const MAX_SESSION_MESSAGES = 100;
+
 export interface AssistantSessionState {
   assistantSessions: AssistantSession[];
   activeSessionId: string;
@@ -50,7 +54,8 @@ function sanitizeAssistantSession(value: unknown): AssistantSession | null {
     createdAt: session.createdAt,
     messages: session.messages
       .map((message) => sanitizeMessage(message, session.id as string))
-      .filter((message): message is AssistantMessage => message !== null),
+      .filter((message): message is AssistantMessage => message !== null)
+      .slice(-MAX_SESSION_MESSAGES),
   };
 }
 
@@ -63,6 +68,7 @@ export function initializeAssistantSessions(
     ? persistedSessions
         .map(sanitizeAssistantSession)
         .filter((session): session is AssistantSession => session !== null)
+        .slice(0, MAX_ASSISTANT_SESSIONS)
     : [];
 
   if (assistantSessions.length === 0) {
@@ -140,7 +146,15 @@ export function appendAssistantMessage(
   if (!sessions.some((session) => session.id === message.sessionId)) return sessions;
   return sessions.map((session) =>
     session.id === message.sessionId
-      ? { ...session, messages: [...session.messages, message] }
+      ? { ...session, messages: [...session.messages, message].slice(-MAX_SESSION_MESSAGES) }
       : session,
   );
+}
+
+/** Adds a new session at the front, dropping the oldest beyond the cap. */
+export function prependAssistantSession(
+  sessions: AssistantSession[],
+  session: AssistantSession,
+): AssistantSession[] {
+  return [session, ...sessions.filter((existing) => existing.id !== session.id)].slice(0, MAX_ASSISTANT_SESSIONS);
 }

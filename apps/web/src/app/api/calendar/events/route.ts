@@ -3,27 +3,24 @@ import { NextResponse } from "next/server";
 import { getCalendarClient } from "@crewmate/lib/server";
 import { googleErrorResponse } from "@/lib/google-error-response";
 import type { calendar_v3 } from "googleapis";
+import { parseCalendarIds, parseEventDateTime, parseIsoInstant, readJsonObject } from "@/lib/requestValidation";
 
 function eventBody(value: unknown): { calendarId: string; requestBody: calendar_v3.Schema$Event } | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const body = value as Record<string, unknown>;
   const calendarId = typeof body.calendarId === "string" ? body.calendarId.trim() : "primary";
   if (!calendarId || typeof body.summary !== "string" || !body.summary.trim() || body.summary.length > 1024) return null;
-  const validTime = (time: unknown) => {
-    if (!time || typeof time !== "object" || Array.isArray(time)) return false;
-    const candidate = time as Record<string, unknown>;
-    if (typeof candidate.date === "string") return /^\d{4}-\d{2}-\d{2}$/.test(candidate.date);
-    return typeof candidate.dateTime === "string" && !Number.isNaN(Date.parse(candidate.dateTime));
-  };
-  if (!validTime(body.start) || !validTime(body.end)) return null;
+  const start = parseEventDateTime(body.start);
+  const end = parseEventDateTime(body.end);
+  if (!start || !end || ("date" in start) !== ("date" in end)) return null;
   return {
     calendarId,
     requestBody: {
       summary: body.summary.trim(),
       description: typeof body.description === "string" ? body.description.slice(0, 20_000) : undefined,
       location: typeof body.location === "string" ? body.location.slice(0, 1024) : undefined,
-      start: body.start as calendar_v3.Schema$EventDateTime,
-      end: body.end as calendar_v3.Schema$EventDateTime,
+      start,
+      end,
     },
   };
 }
@@ -34,18 +31,23 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const timeMin =
-    searchParams.get("timeMin") ??
-    new Date(Date.now() - 7 * 86400000).toISOString();
-  const timeMax =
-    searchParams.get("timeMax") ??
-    new Date(Date.now() + 60 * 86400000).toISOString();
+  const timeMinParam = searchParams.get("timeMin");
+  const timeMaxParam = searchParams.get("timeMax");
+  const timeMin = timeMinParam === null
+    ? new Date(Date.now() - 7 * 86400000).toISOString()
+    : parseIsoInstant(timeMinParam);
+  const timeMax = timeMaxParam === null
+    ? new Date(Date.now() + 60 * 86400000).toISOString()
+    : parseIsoInstant(timeMaxParam);
+  if (!timeMin || !timeMax || timeMin >= timeMax) {
+    return NextResponse.json({ error: "timeMin and timeMax must be ISO date-times with timeMin before timeMax" }, { status: 400 });
+  }
 
   // calendarIds is a comma-separated list; defaults to "primary"
-  const calendarIdsParam = searchParams.get("calendarIds");
-  const calendarIds = calendarIdsParam
-    ? calendarIdsParam.split(",").filter(Boolean)
-    : ["primary"];
+  const calendarIds = parseCalendarIds(searchParams.get("calendarIds"));
+  if (!calendarIds) {
+    return NextResponse.json({ error: "Invalid calendarIds" }, { status: 400 });
+  }
 
   const calendar = getCalendarClient(session.accessToken);
 
@@ -101,7 +103,7 @@ export async function POST(req: Request) {
   if (!session?.accessToken)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const parsed = eventBody(await req.json().catch(() => null));
+  const parsed = eventBody(await readJsonObject(req, 100_000));
   if (!parsed) return NextResponse.json({ error: "Invalid calendar event" }, { status: 400 });
   const { calendarId, requestBody } = parsed;
   const calendar = getCalendarClient(session.accessToken);

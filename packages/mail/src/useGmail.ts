@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useApp } from "@crewmate/state";
+import { ApiError, apiFetch, isAbortError, jsonRequest } from "@crewmate/lib";
 
 export interface GmailThread {
   id: string;
@@ -33,8 +34,18 @@ export function useGmail() {
   const [threads, setThreads] = useState<GmailThread[]>([]);
   const [loading, setLoading] = useState(false);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+  const [authError, setAuthError] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const requestVersionRef = useRef(0);
+
+  /** Records an expired session; returns true when the error was handled that way. */
+  const handleAuth = useCallback((err: unknown): boolean => {
+    if (err instanceof ApiError && err.isAuthExpired) {
+      setAuthError(true);
+      return true;
+    }
+    return false;
+  }, []);
 
   const fetchThreads = useCallback(
     async (query = "in:inbox", pageToken?: string) => {
@@ -51,122 +62,125 @@ export function useGmail() {
         );
         params.set("limit", String(Number.isFinite(configuredLimit) ? configuredLimit : 20));
         if (pageToken) params.set("pageToken", pageToken);
-        const res = await fetch(`/api/gmail/threads?${params}`, {
-          signal: ctrl.signal,
-        });
-        if (!res.ok) throw new Error("Failed to fetch threads");
-        const data = await res.json();
+        const data = await apiFetch<{ threads?: GmailThread[]; nextPageToken?: string | null }>(
+          `/api/gmail/threads?${params}`,
+          { signal: ctrl.signal, fallbackError: "Failed to load emails" },
+        );
         if (requestVersion !== requestVersionRef.current) return;
+        setAuthError(false);
+        const page = Array.isArray(data?.threads) ? data.threads : [];
         if (pageToken) {
-          setThreads((prev) => [...prev, ...data.threads]);
+          setThreads((prev) => [...prev, ...page]);
         } else {
-          setThreads(data.threads);
+          setThreads(page);
         }
-        setNextPageToken(data.nextPageToken);
+        setNextPageToken(data?.nextPageToken ?? null);
       } catch (err: unknown) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (isAbortError(err) || requestVersion !== requestVersionRef.current) return;
+        if (handleAuth(err)) return;
         notify("Failed to load emails", "error");
       } finally {
         if (requestVersion === requestVersionRef.current) setLoading(false);
       }
     },
-    [notify, state.pageSettings.features.mail],
+    [notify, handleAuth, state.pageSettings.features.mail],
   );
 
   const fetchThread = useCallback(
-    async (id: string, silent = false): Promise<GmailMessage[] | null> => {
+    async (id: string, silent = false, signal?: AbortSignal): Promise<GmailMessage[] | null> => {
       try {
-        const res = await fetch(`/api/gmail/thread/${id}`);
-        if (!res.ok) throw new Error("Failed to fetch thread");
-        const data = await res.json();
-        return data.messages;
-      } catch {
-        if (!silent) notify("Failed to load thread", "error");
+        const data = await apiFetch<{ messages?: GmailMessage[] }>(
+          `/api/gmail/thread/${encodeURIComponent(id)}`,
+          { signal, fallbackError: "Failed to load thread" },
+        );
+        return Array.isArray(data?.messages) ? data.messages : [];
+      } catch (err: unknown) {
+        if (isAbortError(err)) return null;
+        if (!handleAuth(err) && !silent) notify("Failed to load thread", "error");
         return null;
       }
     },
-    [notify],
+    [notify, handleAuth],
+  );
+
+  /** Runs a thread mutation and reports success/failure uniformly. */
+  const mutateThread = useCallback(
+    async (
+      id: string,
+      init: RequestInit,
+      messages: { success: string; failure: string; successKind?: "success" | "info" },
+      onSuccess: () => void,
+      onFailure?: () => void,
+    ) => {
+      try {
+        await apiFetch(`/api/gmail/thread/${encodeURIComponent(id)}`, {
+          ...init,
+          fallbackError: messages.failure,
+        });
+        onSuccess();
+        notify(messages.success, messages.successKind ?? "success");
+        return true;
+      } catch (err: unknown) {
+        onFailure?.();
+        if (!handleAuth(err)) notify(messages.failure, "error");
+        return false;
+      }
+    },
+    [notify, handleAuth],
+  );
+
+  const removeThread = useCallback(
+    (id: string) => setThreads((prev) => prev.filter((t) => t.id !== id)),
+    [],
   );
 
   const archiveThread = useCallback(
-    async (id: string) => {
-      try {
-        const res = await fetch(`/api/gmail/thread/${id}`, {
-          method: "PATCH",
-        });
-        if (!res.ok) throw new Error("Archive failed");
-        setThreads((prev) => prev.filter((t) => t.id !== id));
-        notify("Thread archived", "success");
-        return true;
-      } catch {
-        notify("Failed to archive", "error");
-        return false;
-      }
-    },
-    [notify],
+    (id: string) =>
+      mutateThread(
+        id,
+        { method: "PATCH" },
+        { success: "Thread archived", failure: "Failed to archive" },
+        () => removeThread(id),
+      ),
+    [mutateThread, removeThread],
   );
 
   const unarchiveThread = useCallback(
-    async (id: string) => {
-      try {
-        const res = await fetch(`/api/gmail/thread/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ archive: false }),
-        });
-        if (!res.ok) throw new Error("Unarchive failed");
-        setThreads((prev) => prev.filter((thread) => thread.id !== id));
-        notify("Thread returned to Inbox", "success");
-        return true;
-      } catch {
-        notify("Failed to unarchive", "error");
-        return false;
-      }
-    },
-    [notify],
+    (id: string) =>
+      mutateThread(
+        id,
+        jsonRequest("PATCH", { archive: false }),
+        { success: "Thread returned to Inbox", failure: "Failed to unarchive" },
+        () => removeThread(id),
+      ),
+    [mutateThread, removeThread],
   );
 
   const trashThread = useCallback(
-    async (id: string) => {
-      try {
-        const res = await fetch(`/api/gmail/thread/${id}`, {
-          method: "DELETE",
-        });
-        if (!res.ok) throw new Error("Delete failed");
-        setThreads((prev) => prev.filter((t) => t.id !== id));
-        notify("Thread deleted", "success");
-        return true;
-      } catch {
-        notify("Failed to delete", "error");
-        return false;
-      }
-    },
-    [notify],
+    (id: string) =>
+      mutateThread(
+        id,
+        { method: "DELETE" },
+        { success: "Thread deleted", failure: "Failed to delete" },
+        () => removeThread(id),
+      ),
+    [mutateThread, removeThread],
   );
 
   const toggleStar = useCallback(
-    async (id: string, star: boolean) => {
-      setThreads((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, starred: star } : t)),
+    (id: string, star: boolean) => {
+      const setStar = (value: boolean) =>
+        setThreads((prev) => prev.map((t) => (t.id === id ? { ...t, starred: value } : t)));
+      setStar(star);
+      return mutateThread(
+        id,
+        jsonRequest("PUT", { star }),
+        { success: star ? "Starred" : "Unstarred", failure: "Failed to update star" },
+        () => undefined,
+        () => setStar(!star),
       );
-      try {
-        const res = await fetch(`/api/gmail/thread/${id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ star }),
-        });
-        if (!res.ok) throw new Error("Toggle star failed");
-        notify(star ? "Starred" : "Unstarred", "success");
-        return true;
-      } catch {
-        setThreads((prev) =>
-          prev.map((t) => (t.id === id ? { ...t, starred: !star } : t)),
-        );
-        notify("Failed to update star", "error");
-        return false;
-      }
     },
-    [notify],
+    [mutateThread],
   );
 
   const sendEmail = useCallback(
@@ -176,28 +190,30 @@ export function useGmail() {
       body: string;
       threadId?: string;
       inReplyTo?: string;
+      references?: string;
     }) => {
       try {
-        const res = await fetch("/api/gmail/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(params),
+        await apiFetch("/api/gmail/send", {
+          ...jsonRequest("POST", params),
+          fallbackError: "Failed to send email",
         });
-        if (!res.ok) throw new Error("Send failed");
         notify("Email sent", "success");
         return true;
-      } catch {
-        notify("Failed to send email", "error");
+      } catch (err: unknown) {
+        if (handleAuth(err)) return false;
+        // Validation messages from the send route are written by Crewmate and safe to show.
+        notify(err instanceof ApiError && err.status === 400 ? err.message : "Failed to send email", "error");
         return false;
       }
     },
-    [notify],
+    [notify, handleAuth],
   );
 
   return {
     threads,
     loading,
     nextPageToken,
+    authError,
     fetchThreads,
     fetchThread,
     archiveThread,
